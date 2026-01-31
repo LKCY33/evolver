@@ -1,3 +1,9 @@
+---
+name: memory-manager
+description: Atomic updater for MEMORY.md and other text files. Prevents edit conflicts, ensures normalization, and maintains long-term memory integrity.
+tags: [memory, system, file-management, core]
+---
+
 # Memory Manager
 
 A robust, atomic updater for `MEMORY.md` (and other text files) to prevent edit conflicts and normalization issues.

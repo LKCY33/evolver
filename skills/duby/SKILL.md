@@ -1,3 +1,9 @@
+---
+name: duby
+description: Convert text to speech using Duby.so API. Supports various voices and emotions.
+tags: [tts, audio, voice, duby]
+---
+
 # Duby TTS Skill
 
 Convert text to speech using Duby.so API.

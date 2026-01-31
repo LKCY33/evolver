@@ -1,3 +1,9 @@
+---
+name: capability-evolver
+description: Track, analyze, and promote ad-hoc workflows into formalized skills.
+tags: [meta, skill-building, evolution]
+---
+
 # Capability Evolver
 
 A system for tracking, analyzing, and promoting ad-hoc workflows into formalized, reusable skills.

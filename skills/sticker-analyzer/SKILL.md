@@ -1,3 +1,9 @@
+---
+name: sticker-analyzer
+description: Analyze images in media/stickers using Vision API to identify and filter meme/sticker content vs screenshots or documents.
+tags: [vision, image-analysis, stickers, memes]
+---
+
 # Sticker Analyzer Skill
 
 Analyzes images in `media/stickers` using Google Gemini Vision API to filter out non-stickers (screenshots, documents).
@@ -11,7 +17,7 @@ Runs the analysis script.
 
 ## Setup
 1.  Requires `npm install @google/generative-ai`.
-2.  Requires a valid Google AI Studio API Key in `analyze.js`.
+2.  Requires a valid Google AI Studio API Key in `.env` (GEMINI_API_KEY).
 
 ## Status
-Current API Key seems to have access issues (404 on models).
+Active. Configured with Gemini 2.5 Flash for high-speed sticker filtering.

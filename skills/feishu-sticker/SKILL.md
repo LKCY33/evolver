@@ -1,3 +1,9 @@
+---
+name: feishu-sticker
+description: Send images as native Feishu stickers. Automatically uploads images to Feishu, caches image keys, and sends as sticker/image messages.
+tags: [feishu, lark, sticker, image, fun]
+---
+
 # Feishu Sticker Skill
 
 Sends a sticker (image) to a Feishu user.

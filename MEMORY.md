@@ -27,7 +27,10 @@
   - **GIF Handling:**
     - **Storage/Sending:** Allowed. Can send `.gif` files to Feishu directly.
     - **LLM Context:** **FORBIDDEN.** Never feed raw `.gif` files into the LLM context. Convert to PNG first if analysis is needed.
-  - **Image Recognition:** Use Gemini Vision (via `sticker-analyzer` skill) to identify if an image is a sticker/meme. Do not guess by file size.
+  - **Image Recognition:** 
+    - **Engine:** Google Gemini Vision (Multimodal).
+    - **Policy:** **NEVER GUESS** content based on file size/type. ALWAYS use Vision API to analyze images/stickers.
+    - **Key:** Configured in .env (GEMINI_API_KEY).
 
 ## System Operations
 - **Gossip Protocol:**
@@ -47,4 +50,4 @@
 - **Kusa.pics:** Installed (Image generation).
 ## Critical Meta-Rules
 - **Memory Update Protocol:** NEVER use the `edit` tool on this file. ALWAYS use `memory-manager` skill (`node .../memory-manager/update.js`) to ensure atomic, normalized updates.
-- **GIF Handling:** Critical: All incoming GIFs are now automatically masked as 'application/octet-stream' (.bin) by the Feishu plugin to prevent Gemini model crashes. Do not attempt to parse visual content from them.
+- **GIF Handling:**\n    - **Storage/Sending:** Allowed. Can send  files to Feishu directly.\n    - **LLM Context:** **FORBIDDEN.** Never feed raw  files into the LLM context. Convert to PNG first if analysis is needed.

@@ -1,3 +1,9 @@
+---
+name: mind-blow
+description: Deliver "mind-blowing" insights, paradoxes, or cosmic horrors. Uses advanced reasoning to generate content that challenges reality or perception.
+tags: [fun, philosophy, creative, reasoning]
+---
+
 # Mind Blow Up Skill
 
 A skill to deliver "mind-blowing" insights, paradoxes, or cosmic horrors to the user.

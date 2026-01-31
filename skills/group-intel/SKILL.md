@@ -1,3 +1,9 @@
+---
+name: group-intel
+description: Periodically scans group chats, summarizes conversations, and reports intelligence/gossip to the Master.
+tags: [feishu, lark, analysis, summary, gossip]
+---
+
 # Group Intel Skill
 
 Periodically scans all group chats where the bot is present, summarizes the conversation, and reports to the Master.

@@ -98,6 +98,8 @@ program
   .option('--replace <text>', 'Alias for --new')
   .option('--content <text>', 'Content to append')
   .option('--content-file <path>', 'Read content from file')
+  .option('--old-file <path>', 'Read old text from file')
+  .option('--new-file <path>', 'Read new text from file')
   .parse(process.argv);
 
 const options = program.opts();
@@ -105,9 +107,25 @@ const options = program.opts();
 // Handle file input for content args to avoid shell escaping hell
 if (options.contentFile) {
     try {
-        options.content = fs.readFileSync(options.contentFile, 'utf8');
+        options.content = fs.readFileSync(options.contentFile, 'utf8').trim(); // Trim to avoid accidental newlines
     } catch (e) {
         console.error(`Failed to read content file: ${e.message}`);
+        process.exit(1);
+    }
+}
+if (options.oldFile) {
+    try {
+        options.old = fs.readFileSync(options.oldFile, 'utf8').trim();
+    } catch (e) {
+        console.error(`Failed to read old file: ${e.message}`);
+        process.exit(1);
+    }
+}
+if (options.newFile) {
+    try {
+        options.new = fs.readFileSync(options.newFile, 'utf8').trim();
+    } catch (e) {
+        console.error(`Failed to read new file: ${e.message}`);
         process.exit(1);
     }
 }
