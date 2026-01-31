@@ -1,0 +1,11 @@
+--- /home/crishaocredits/openclaw-compare/package/dist/web/media.js	1985-10-26 08:15:00.000000000 +0000
++++ /home/crishaocredits/.npm-global/lib/node_modules/openclaw/dist/web/media.js	2026-01-31 20:16:01.563053751 +0000
+@@ -106,7 +106,7 @@
+         const cap = maxBytes !== undefined ? maxBytes : maxBytesForKind(params.kind);
+         if (params.kind === "image") {
+             const isGif = params.contentType === "image/gif";
+-            if (isGif || !optimizeImages) {
++            if (!optimizeImages) {
+                 if (params.buffer.length > cap) {
+                     throw new Error(formatCapLimit(isGif ? "GIF" : "Media", cap, params.buffer.length));
+                 }
