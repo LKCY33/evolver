@@ -3,15 +3,25 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 const fs = require('fs');
 
-// Try to resolve ffmpeg-static dynamically
+// Resolve ffmpeg path (Priority: Local Static > Node Module > System Path)
 let ffmpegPath;
-try {
-    ffmpegPath = require('ffmpeg-static');
-} catch (e) {
+
+const localStaticPath = path.resolve(__dirname, '../../../bin/ffmpeg');
+if (fs.existsSync(localStaticPath)) {
+    ffmpegPath = localStaticPath;
+} else {
     try {
-        ffmpegPath = require(path.resolve(__dirname, '../../../node_modules/ffmpeg-static'));
-    } catch (e2) {
-        // ffmpeg not found
+        ffmpegPath = require('ffmpeg-static');
+    } catch (e) {
+        try {
+            ffmpegPath = require(path.resolve(__dirname, '../../../node_modules/ffmpeg-static'));
+        } catch (e2) {
+            // Fallback to system command 'ffmpeg'
+            const sysCheck = spawnSync('ffmpeg', ['-version']);
+            if (sysCheck.status === 0) {
+                ffmpegPath = 'ffmpeg';
+            }
+        }
     }
 }
 
