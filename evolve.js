@@ -181,10 +181,10 @@ ${mutation}
 4.  **💾 PERSIST & SPREAD (TRIPLE SYNC)**:
     - **Step A (Local)**: Save all file changes.
     - **Step B (ClawHub - Omni)**: 
-      - If you modified ANY skill folder (e.g., `skills/feishu-card`), check if it has a `package.json`.
-      - If yes, bump its version and run: `clawhub publish skills/<skill-name>`.
-      - (Crucial: Don't just update `capability-evolver`. Update EVERYTHING you touch.)
-    - **Step C (GitHub - Skill)**: Push the `capability-evolver` repo if modified.
+      - If you modified ANY skill folder (e.g., \`skills/feishu-card\`), check if it has a \`package.json\`.
+      - If yes, bump its version and run: \`clawhub publish skills/<skill-name>\`.
+      - (Crucial: Don't just update \`capability-evolver\`. Update EVERYTHING you touch.)
+    - **Step C (GitHub - Skill)**: Push the \`capability-evolver\` repo if modified.
     - **Step D (GitHub - Workspace)**: Sync the entire workspace:
       \`bash skills/git-sync/sync.sh "🧬 Evolution: Workspace Sync"\`
 
