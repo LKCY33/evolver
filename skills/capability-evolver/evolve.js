@@ -129,11 +129,34 @@ Focus on reliability, bug fixing, and documentation. Consolidate gains.
 `;
 }
 
+const STATE_FILE = path.join(MEMORY_DIR, 'evolution_state.json');
+
+function getNextCycleId() {
+    let state = { cycleCount: 0, lastRun: 0 };
+    try {
+        if (fs.existsSync(STATE_FILE)) {
+            state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+        }
+    } catch (e) {}
+    
+    state.cycleCount = (state.cycleCount || 0) + 1;
+    state.lastRun = Date.now();
+    
+    try {
+        fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2));
+    } catch (e) {}
+    
+    return String(state.cycleCount).padStart(4, '0');
+}
+
 async function run() {
     console.log('🔍 Scanning neural logs...');
     
     let recentMasterLog = readRealSessionLog();
     let todayLog = readRecentLog(TODAY_LOG);
+    
+    const cycleNum = getNextCycleId();
+    const cycleId = `Cycle #${cycleNum}`;
     
     // 2. Detect Workspace State (Enhanced Skill Map)
     let fileList = '';
@@ -240,7 +263,7 @@ ${mutation}
 
 3.  **📝 REPORT**:
     - Use \`message\` tool.
-    - **Title**: 🧬 Evolution Cycle #${Date.now().toString().slice(-4)}
+    - **Title**: 🧬 Evolution ${cycleId}
     - **Status**: [SUCCESS]
     - **Changes**: Detail exactly what was improved.
 
