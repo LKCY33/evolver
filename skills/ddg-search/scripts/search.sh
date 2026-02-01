@@ -14,12 +14,36 @@ urlencode() {
 }
 
 ENCODED_QUERY=$(urlencode "$QUERY")
-
-# DuckDuckGo Instant Answer API endpoint
 API_URL="https://api.duckduckgo.com/?q=${ENCODED_QUERY}&format=json&pretty=1&nohtml=1&skip_disambig=1"
+USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-# Make the request and parse with jq
-response=$(curl -s "$API_URL")
+# Retry logic
+MAX_RETRIES=3
+RETRY_DELAY=2
+response=""
+success=0
+
+for ((i=1; i<=MAX_RETRIES; i++)); do
+    # Fetch with timeout (10s) and user-agent
+    if response=$(curl -s --max-time 10 -A "$USER_AGENT" "$API_URL"); then
+        # Check if response looks like valid JSON (starts with {)
+        if [[ "$response" == \{* ]]; then
+            success=1
+            break
+        fi
+    fi
+    
+    # Log to stderr to avoid polluting output
+    if [ $i -lt $MAX_RETRIES ]; then
+        echo "DEBUG: DDG Fetch attempt $i failed or returned invalid data. Retrying in ${RETRY_DELAY}s..." >&2
+        sleep "$RETRY_DELAY"
+    fi
+done
+
+if [ $success -eq 0 ]; then
+    echo "Error: Failed to connect to DuckDuckGo API after $MAX_RETRIES attempts."
+    exit 1
+fi
 
 # Extract AbstractText, AbstractURL, or Redirect
 abstract_text=$(echo "$response" | jq -r '.AbstractText // empty')
@@ -41,7 +65,7 @@ else
     if [ -n "$related_topics" ]; then
         output="Related Topics:\n$related_topics"
     else
-        output="No direct answer or related topics found."
+        output="No direct answer or related topics found (API limitation)."
     fi
 fi
 
