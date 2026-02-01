@@ -1,10 +1,12 @@
 const fs = require('fs');
 const { program } = require('commander');
+const path = require('path');
 require('dotenv').config({ path: require('path').resolve(__dirname, '../../.env') }); // Load workspace .env
 
 // Credentials from environment
 const APP_ID = process.env.FEISHU_APP_ID;
 const APP_SECRET = process.env.FEISHU_APP_SECRET;
+const TOKEN_CACHE_FILE = path.resolve(__dirname, '../../memory/feishu_token.json');
 
 if (!APP_ID || !APP_SECRET) {
     console.error('Error: FEISHU_APP_ID or FEISHU_APP_SECRET not set.');
@@ -12,6 +14,21 @@ if (!APP_ID || !APP_SECRET) {
 }
 
 async function getToken() {
+    // 1. Try to read from cache
+    try {
+        if (fs.existsSync(TOKEN_CACHE_FILE)) {
+            const cached = JSON.parse(fs.readFileSync(TOKEN_CACHE_FILE, 'utf8'));
+            const now = Math.floor(Date.now() / 1000);
+            if (cached.expire > now + 60) { // Buffer of 60 seconds
+                // console.log('Using cached token');
+                return cached.token;
+            }
+        }
+    } catch (e) {
+        // Ignore cache read errors
+    }
+
+    // 2. Fetch new token
     try {
         const res = await fetch('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
             method: 'POST',
@@ -25,6 +42,18 @@ async function getToken() {
         if (!data.tenant_access_token) {
             throw new Error(`No token returned: ${JSON.stringify(data)}`);
         }
+
+        // 3. Save to cache
+        try {
+            const cacheData = {
+                token: data.tenant_access_token,
+                expire: Math.floor(Date.now() / 1000) + data.expire // data.expire is usually seconds duration
+            };
+            fs.writeFileSync(TOKEN_CACHE_FILE, JSON.stringify(cacheData, null, 2));
+        } catch (e) {
+            console.error('Failed to cache token:', e.message);
+        }
+
         return data.tenant_access_token;
     } catch (e) {
         console.error('Failed to get token:', e.message);
