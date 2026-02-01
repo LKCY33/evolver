@@ -1,4 +1,3 @@
-const fetch = require('node-fetch');
 const { getTenantAccessToken } = require('./auth');
 
 async function resolveWiki(token, accessToken) {

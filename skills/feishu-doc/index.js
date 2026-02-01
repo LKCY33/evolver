@@ -3,7 +3,6 @@ const { resolveWiki } = require('./lib/wiki');
 const { fetchDocxContent } = require('./lib/docx');
 const { fetchSheetContent } = require('./lib/sheet');
 const { fetchBitableContent } = require('./lib/bitable');
-const fetch = require('node-fetch');
 const fs = require('fs');
 const path = require('path');
 

@@ -1,4 +1,3 @@
-const fetch = require('node-fetch');
 
 async function fetchDocxContent(documentId, accessToken) {
   // 1. Get document info for title

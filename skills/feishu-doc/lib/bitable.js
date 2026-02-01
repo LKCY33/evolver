@@ -1,4 +1,3 @@
-const fetch = require('node-fetch');
 
 async function fetchBitableContent(token, accessToken) {
   // 1. List tables

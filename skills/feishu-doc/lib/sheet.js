@@ -1,4 +1,3 @@
-const fetch = require('node-fetch');
 
 async function fetchSheetContent(token, accessToken) {
   // 1. Get metainfo to find sheetIds

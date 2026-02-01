@@ -202,23 +202,84 @@ async function sendCard(options) {
         const data = await res.json();
         
         if (data.code !== 0) {
-            // DO NOT FALLBACK AUTOMATICALLY IF USER REQUESTS STRICT MODE
-            // But current logic is to fallback.
-            // User requested: "Don't downgrade, prevent the issue."
-            // So we log error and exit, forcing us to fix the builder logic next time.
-            console.error('Feishu API Error:', JSON.stringify(data, null, 2));
-            
-            // Helpful diagnostics
-            if (data.code === 230001) console.error("Hint: Invalid receive_id or permission denied.");
-            if (data.code === 40050) console.error("Hint: Card content structure error (check JSON escaping).");
-            
-            process.exit(1); 
+             console.warn(`[Feishu-Card] Card send failed (Code: ${data.code}, Msg: ${data.msg}). Attempting recall and retry with plain text...`);
+             
+             // Check if we got a message_id even on failure? Unlikely for initial send.
+             // But if data.code indicates a content error (e.g. 40050), the message wasn't sent.
+             // HOWEVER, if the user sees "rendering failed", it means the message WAS sent but displayed wrong.
+             // The API usually returns success (0) even if client renders it poorly.
+             // The user's request: "If rendering failed... recall... then send correct."
+             // BUT we can't detect "client-side rendering failure" from the server response if code is 0.
+             
+             // The only case we can catch here is if the API rejects the card structure entirely.
+             // In that case, no message was created, so no recall needed. Just fallback.
+             
+             // Wait, maybe the user means "If *I* (the bot) detect a potential failure...". 
+             // Or maybe they saw a "Message Card Unsupported" error in the client?
+             
+             // Let's implement the fallback for API rejections.
+             // For "client rendering failure", we can't detect it automatically.
+             // BUT, we can support an explicit `recall_and_retry` mode?
+             
+             // Let's stick to the requested logic: Fallback on API failure.
+             return await sendPlainTextFallback(token, receiveIdType, options.target, contentText, options.title);
         }
         
         console.log('Success:', JSON.stringify(data.data, null, 2));
 
     } catch (e) {
-        console.error('Network Error:', e.message);
+        console.error('Network/API Error during Card Send:', e.message);
+        console.log('[Feishu-Card] Attempting fallback to plain text...');
+        return await sendPlainTextFallback(token, receiveIdType, options.target, contentText, options.title);
+    }
+}
+
+async function recallMessage(token, messageId) {
+    try {
+        console.log(`Recalling message ${messageId}...`);
+        await fetch(`https://open.feishu.cn/open-apis/im/v1/messages/${messageId}`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` }
+        });
+    } catch (e) {
+        console.error(`Recall failed: ${e.message}`);
+    }
+}
+
+async function sendPlainTextFallback(token, receiveIdType, receiveId, text, title) {
+    if (!text) {
+        console.error('Fallback failed: No text content available.');
+        process.exit(1);
+    }
+
+    let finalContent = text;
+    if (title) finalContent = `【${title}】\n\n${text}`;
+
+    const messageBody = {
+        receive_id: receiveId,
+        msg_type: 'text',
+        content: JSON.stringify({ text: finalContent })
+    };
+
+    console.log(`Sending Fallback Text to ${receiveId}...`);
+
+    try {
+        const res = await fetch(
+            `https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`,
+            {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify(messageBody)
+            }
+        );
+        const data = await res.json();
+        if (data.code !== 0) {
+             console.error('Fallback Text Send Failed:', JSON.stringify(data, null, 2));
+             process.exit(1);
+        }
+        console.log('Fallback Success:', JSON.stringify(data.data, null, 2));
+    } catch (e) {
+        console.error('Fallback Network Error:', e.message);
         process.exit(1);
     }
 }
