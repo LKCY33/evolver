@@ -152,9 +152,15 @@ function checkSystemHealth() {
     } catch (e) {}
 
     try {
-        // Process count
-        const ps = execSync('ps aux | grep node | grep -v grep | wc -l', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
-        report.push(`Node Processes: ${ps.trim()}`);
+        // Process count: Attempt pgrep first (faster), fallback to ps
+        try {
+            const pgrep = execSync('pgrep -c node', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+            report.push(`Node Processes: ${pgrep.trim()}`);
+        } catch (e) {
+            // Fallback to ps if pgrep fails/missing
+            const ps = execSync('ps aux | grep node | grep -v grep | wc -l', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+            report.push(`Node Processes: ${ps.trim()}`);
+        }
     } catch (e) {}
     
     return report.length ? report.join(' | ') : 'Health Check Unavailable';
