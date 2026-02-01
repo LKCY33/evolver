@@ -494,8 +494,8 @@ function getAutoTarget() {
             fs.closeSync(fd);
             const tail = buffer.toString('utf8');
             
-            // Find last "open_id": "ou_..."
-            const matches = [...tail.matchAll(/"open_id"\s*:\s*"(ou_[a-z0-9]+)"/g)];
+            // Find last "open_id": "ou_..." OR "chat_id": "oc_..." (Group or User)
+            const matches = [...tail.matchAll(/"(?:open_id|chat_id|user_id|open_chat_id)"\s*:\s*"(o[uc]_[a-z0-9]+)"/g)];
             if (matches.length > 0) {
                  const lastId = matches[matches.length - 1][1];
                  console.log(`[Feishu-Card] Target Source: menu_events.json (Tail Search: ${lastId})`);
