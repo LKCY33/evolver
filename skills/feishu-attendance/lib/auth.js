@@ -35,11 +35,11 @@ function loadConfig() {
   };
 }
 
-async function getTenantAccessToken() {
+async function getTenantAccessToken(forceRefresh = false) {
   const now = Math.floor(Date.now() / 1000);
 
   // 1. Try Memory Cache (File)
-  if (fs.existsSync(TOKEN_CACHE_FILE)) {
+  if (!forceRefresh && fs.existsSync(TOKEN_CACHE_FILE)) {
     try {
       const cached = JSON.parse(fs.readFileSync(TOKEN_CACHE_FILE, 'utf8'));
       if (cached.token && cached.expire > now + 60) {
@@ -48,6 +48,11 @@ async function getTenantAccessToken() {
     } catch (e) {
       // Ignore cache errors, fetch new
     }
+  }
+
+  // Force Refresh: Delete cache
+  if (forceRefresh) {
+    try { if (fs.existsSync(TOKEN_CACHE_FILE)) fs.unlinkSync(TOKEN_CACHE_FILE); } catch(e) {}
   }
 
   const config = loadConfig();
