@@ -48,7 +48,9 @@ function formatSessionLog(jsonlContent) {
                      if (resContent.length < 50 && (resContent.includes('success') || resContent.includes('done'))) return null;
                      if (resContent.trim() === '') return null;
                      
-                     return `[TOOL RESULT]`;
+                     // Improvement: Show snippet of result (especially errors) instead of hiding it
+                     const preview = resContent.replace(/\n+/g, ' ').slice(0, 200);
+                     return `[TOOL RESULT] ${preview}${resContent.length > 200 ? '...' : ''}`;
                 }
                 return null;
             } catch (e) { return null; }
