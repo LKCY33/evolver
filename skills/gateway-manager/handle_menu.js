@@ -1,6 +1,7 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 // --- Gateway Event Handler ---
 // Handles 'application.bot.menu_v6' and 'card.action.trigger' events from Feishu Plugin.
@@ -38,6 +39,24 @@ function getSkillScript(skillName, scriptName) {
         if (fs.existsSync(p)) return p;
     }
     return null;
+}
+
+// Helper: Parse Master ID from USER.md
+function getMasterId() {
+    const defaultMaster = 'ou_cdc63fe05e88c580aedead04d851fc04'; // Fallback
+    try {
+        const userMdPath = path.join(WORKSPACE_ROOT, 'USER.md');
+        if (fs.existsSync(userMdPath)) {
+            const content = fs.readFileSync(userMdPath, 'utf8');
+            const match = content.match(/Owner \(Master\).*?Feishu ID:\s*`([^`]+)`/s);
+            if (match && match[1]) {
+                return match[1];
+            }
+        }
+    } catch (e) {
+        // Ignore
+    }
+    return defaultMaster;
 }
 
 function sendFeedback(targetId, title, text, color = 'blue') {
@@ -138,10 +157,13 @@ process.stdin.on('end', () => {
         console.log(`[GatewayManager] Processing ${eventKey} from ${userId}`);
 
         // --- LOGIC ---
-        const MASTER_ID = 'ou_cdc63fe05e88c580aedead04d851fc04';
+        const MASTER_ID = getMasterId();
 
         if (eventKey === 'restart_gateway') {
-            if (userId !== MASTER_ID) return;
+            if (userId !== MASTER_ID) {
+                sendFeedback(userId, 'Permission Denied', '🚫 Only Master can restart the gateway.', 'red');
+                return;
+            }
             sendFeedback(userId, 'Gateway Manager', '🚀 Restarting...', 'orange');
             execSync('openclaw gateway restart', { stdio: 'inherit' });
         } 
@@ -154,6 +176,25 @@ process.stdin.on('end', () => {
                 sendFeedback(userId, 'Gateway Status', `Error: ${err.message}`, 'grey');
             }
         } 
+        else if (eventKey === 'system_info') {
+             try {
+                const memUsage = process.memoryUsage();
+                const totalMem = os.totalmem();
+                const freeMem = os.freemem();
+                const usedMem = totalMem - freeMem;
+                const info = `
+**System Info**:
+- **Node**: ${process.version}
+- **OS**: ${os.type()} ${os.release()}
+- **Memory**: ${Math.round(usedMem / 1024 / 1024)}MB / ${Math.round(totalMem / 1024 / 1024)}MB
+- **RSS**: ${Math.round(memUsage.rss / 1024 / 1024)}MB
+- **Uptime**: ${Math.round(os.uptime() / 60)} min
+                `.trim();
+                sendFeedback(userId, 'System Info', info, 'blue');
+             } catch (err) {
+                 sendFeedback(userId, 'System Info', `Error: ${err.message}`, 'red');
+             }
+        }
         else if (eventKey === 'test_menu_button') {
             console.log('[GatewayManager] Action: CUTE MODE');
             const stickersDir = path.join(WORKSPACE_ROOT, 'media/stickers');

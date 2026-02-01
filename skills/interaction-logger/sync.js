@@ -1,8 +1,9 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 // Config
-const AGENT_SESSIONS_DIR = '/home/crishaocredits/.openclaw/agents/main/sessions';
+const AGENT_SESSIONS_DIR = path.join(os.homedir(), '.openclaw/agents/main/sessions');
 const HISTORY_FILE = path.resolve(__dirname, '../../memory/master_history.json');
 const STATE_FILE = path.join(__dirname, 'sync_state.json');
 

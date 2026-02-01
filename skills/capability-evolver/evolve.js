@@ -1,10 +1,11 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { execSync } = require('child_process');
 
 // Default Configuration
 const MEMORY_DIR = process.env.MEMORY_DIR || path.resolve(__dirname, '../../memory');
-const AGENT_SESSIONS_DIR = '/home/crishaocredits/.openclaw/agents/main/sessions';
+const AGENT_SESSIONS_DIR = path.join(os.homedir(), '.openclaw/agents/main/sessions');
 const TODAY_LOG = path.join(MEMORY_DIR, new Date().toISOString().split('T')[0] + '.md');
 
 function readRealSessionLog() {
