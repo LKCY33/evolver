@@ -11,6 +11,24 @@ const CACHE_DIR = path.join(__dirname, 'cache');
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const EXECUTION_TIMEOUT_MS = 30000; // 30 seconds hard timeout
 
+async function executeWithAuthRetry(operation) {
+    let token = await getTenantAccessToken();
+    try {
+        return await operation(token);
+    } catch (e) {
+        const msg = e.message || '';
+        const isAuthError = msg.includes('9999166') || 
+                           (msg.toLowerCase().includes('token') && (msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('expire')));
+        
+        if (isAuthError) {
+            console.error(`[Feishu-Doc] Auth Error (${msg}). Refreshing token...`);
+            token = await getTenantAccessToken(true);
+            return await operation(token);
+        }
+        throw e;
+    }
+}
+
 async function main() {
   // Set a global watchdog timeout
   const watchdog = setTimeout(() => {
@@ -81,8 +99,9 @@ async function main() {
       }
     }
 
-    const accessToken = await getTenantAccessToken();
-    const result = await processUrl(url, accessToken);
+    const result = await executeWithAuthRetry(async (token) => {
+        return await processUrl(url, token);
+    });
     
     // Save to cache (Atomic)
     if (result && !result.error) {

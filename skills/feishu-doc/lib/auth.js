@@ -46,11 +46,11 @@ function loadConfig() {
 // Unified Token Cache (Shared with feishu-card and feishu-sticker)
 const TOKEN_CACHE_FILE = path.resolve(__dirname, '../../../memory/feishu_token.json');
 
-async function getTenantAccessToken() {
+async function getTenantAccessToken(forceRefresh = false) {
   const now = Math.floor(Date.now() / 1000);
 
   // Try to load from disk first
-  if (!tokenCache.token && fs.existsSync(TOKEN_CACHE_FILE)) {
+  if (!forceRefresh && !tokenCache.token && fs.existsSync(TOKEN_CACHE_FILE)) {
     try {
       const saved = JSON.parse(fs.readFileSync(TOKEN_CACHE_FILE, 'utf8'));
       // Handle both 'expire' (standard) and 'expireTime' (legacy)
@@ -62,6 +62,13 @@ async function getTenantAccessToken() {
     } catch (e) {
       // Ignore corrupted cache
     }
+  }
+
+  // Force Refresh: Delete memory cache and file cache
+  if (forceRefresh) {
+    tokenCache.token = null;
+    tokenCache.expireTime = 0;
+    try { if (fs.existsSync(TOKEN_CACHE_FILE)) fs.unlinkSync(TOKEN_CACHE_FILE); } catch(e) {}
   }
 
   if (tokenCache.token && tokenCache.expireTime > now) {
