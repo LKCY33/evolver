@@ -47,7 +47,7 @@ function recursiveScan(dir) {
         const fullPath = path.join(dir, file);
         
         // Skip ignored directories
-        if (['node_modules', '.git', 'media', 'dist', 'coverage', '.openclaw', 'memory', 'cache'].includes(file)) continue;
+        if (['node_modules', '.git', 'media', 'dist', 'coverage', '.openclaw', 'memory', 'cache', 'ai-game-engine', 'repo'].includes(file)) continue;
         
         // Skip self, env files, and lock files
         if (file === 'index.js' || file === 'scan.js' || file.endsWith('.env')) continue;
