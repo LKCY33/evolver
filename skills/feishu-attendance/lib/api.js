@@ -105,7 +105,9 @@ async function getAttendance(userIds, dateInt, idType = 'employee_id') {
 
 async function sendMessage(receiveId, content) {
   return executeWithAuthRetry(async (token) => {
-    const type = receiveId.startsWith('ou_') ? 'open_id' : 'user_id';
+    let type = 'user_id';
+    if (receiveId.startsWith('ou_')) type = 'open_id';
+    else if (receiveId.startsWith('oc_')) type = 'chat_id';
     
     // Determine if content is text or card (JSON)
     let msgType = 'text';
