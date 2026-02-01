@@ -36,7 +36,7 @@ function fetchArxiv(query, max) {
     return new Promise((resolve, reject) => {
         const req = https.get(url, {
             headers: {
-                'User-Agent': 'OpenClaw/1.0 (EvolutionBot; +https://github.com/example/openclaw)' 
+                'User-Agent': 'OpenClaw/1.1 (EvolutionBot; +https://github.com/example/openclaw)' 
             },
             timeout: 30000 // 30s timeout
         }, (res) => {
@@ -82,7 +82,7 @@ function cleanText(text) {
 
 async function main() {
     try {
-        console.error(`[ArXiv] Searching for: "${QUERY}" (limit: ${MAX_RESULTS})`);
+        if (!WATCH_MODE) console.error(`[ArXiv] Searching for: "${QUERY}" (limit: ${MAX_RESULTS})`);
         const xml = await fetchArxiv(QUERY, MAX_RESULTS);
 
         // Split by entry
@@ -137,29 +137,47 @@ async function main() {
         // Watch Mode Logic
         if (WATCH_MODE) {
             const state = loadState();
-            const lastCheck = state[QUERY] || 0; // Epoch or ISO string
-            const lastDate = new Date(lastCheck).getTime();
+            // Initialize state for this query if not exists
+            if (!state[QUERY] || typeof state[QUERY] !== 'object') {
+                state[QUERY] = { seenIds: [] };
+            }
             
-            // Filter new papers
-            const newPapers = papers.filter(p => new Date(p.published).getTime() > lastDate);
+            const seenIds = new Set(state[QUERY].seenIds || []);
             
-            // Update State (if we found anything newer)
-            if (papers.length > 0) {
-                // Find max date in current batch
-                const maxDateInBatch = papers.reduce((max, p) => {
-                    const t = new Date(p.published).getTime();
-                    return t > max ? t : max;
-                }, lastDate);
+            // Filter new papers (not in seenIds)
+            const newPapers = papers.filter(p => p.id && !seenIds.has(p.id));
+            
+            // Update State (add new IDs, keep list bounded)
+            if (newPapers.length > 0) {
+                newPapers.forEach(p => seenIds.add(p.id));
                 
-                state[QUERY] = new Date(maxDateInBatch).toISOString();
+                // Convert back to array and slice to keep last 200 IDs (prevents infinite growth)
+                // We keep the *latest* ones. Assuming new ones are added last? 
+                // Set order is insertion order in JS.
+                // But we want to ensure we keep the history of what we've seen.
+                const updatedIds = Array.from(seenIds);
+                if (updatedIds.length > 200) {
+                    updatedIds.splice(0, updatedIds.length - 200);
+                }
+                
+                state[QUERY] = { seenIds: updatedIds, lastUpdated: new Date().toISOString() };
                 saveState(state);
+                
+                console.error(`[ArXiv] Watch Mode: Found ${newPapers.length} new papers.`);
+            } else {
+                 console.error(`[ArXiv] Watch Mode: No new papers found.`);
             }
 
             papers = newPapers;
-            console.error(`[ArXiv] Watch Mode: Found ${papers.length} new papers since ${new Date(lastDate).toISOString()}`);
         }
 
-        console.log(JSON.stringify(papers, null, 2));
+        // Output logic
+        if (papers.length > 0) {
+            console.log(JSON.stringify(papers, null, 2));
+        } else {
+            // Output empty array if nothing found (to be valid JSON)
+            console.log("[]");
+        }
 
     } catch (error) {
         console.error("Error fetching ArXiv data:", error);

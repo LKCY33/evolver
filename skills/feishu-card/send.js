@@ -73,7 +73,7 @@ async function uploadImage(token, filePath) {
         fileHash = crypto.createHash('md5').update(fileBuffer).digest('hex');
     } catch (e) {
         console.error('Error reading image file:', e.message);
-        process.exit(1);
+        throw e;
     }
 
     let cache = {};
@@ -111,7 +111,7 @@ async function uploadImage(token, filePath) {
         return imageKey;
     } catch (e) {
         console.error('Image upload failed:', e.message);
-        process.exit(1);
+        throw e;
     }
 }
 
@@ -137,13 +137,18 @@ async function sendCard(options) {
     const elements = [];
     
     if (options.imagePath) {
-        const imageKey = await uploadImage(token, options.imagePath);
-        elements.push({
-            tag: 'img',
-            img_key: imageKey,
-            alt: { tag: 'plain_text', content: options.imageAlt || 'Image' },
-            mode: 'fit_horizontal'
-        });
+        try {
+            const imageKey = await uploadImage(token, options.imagePath);
+            elements.push({
+                tag: 'img',
+                img_key: imageKey,
+                alt: { tag: 'plain_text', content: options.imageAlt || 'Image' },
+                mode: 'fit_horizontal'
+            });
+        } catch (e) {
+            console.warn(`[Feishu-Card] Warning: Skipping image "${options.imagePath}" due to upload failure: ${e.message}`);
+            // Proceed without image
+        }
     }
 
     let contentText = '';
