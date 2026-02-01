@@ -458,6 +458,11 @@ async function readStdin() {
     return data;
 }
 
+const ALLOWED_COLORS = [
+    'blue', 'wathet', 'turquoise', 'green', 'yellow', 'orange', 
+    'red', 'carmine', 'violet', 'purple', 'indigo', 'grey'
+];
+
 (async () => {
     let textContent = options.text;
     if (options.textFile) {
