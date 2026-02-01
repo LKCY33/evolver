@@ -143,11 +143,22 @@ async function safeUpdate(filePath, options) {
 
         // 4. Write back
         if (modified) {
+            // Create Backup (Evolution #51102)
+            const backupPath = `${absPath}.bak`;
+            try {
+                if (fs.existsSync(absPath)) {
+                    fs.copyFileSync(absPath, backupPath);
+                }
+            } catch (bkErr) {
+                console.warn(`[Warn] Backup failed: ${bkErr.message}`);
+            }
+
             // Atomic Write via rename for extra safety (prevents partial reads by others)
             const tempPath = `${absPath}.tmp`;
             fs.writeFileSync(tempPath, content, 'utf8');
             fs.renameSync(tempPath, absPath);
-            console.log("Success: Memory file updated safely.");
+            console.log("Success: Memory file updated safely (Backup created).");
+
         } else {
             console.log("No changes needed.");
         }
