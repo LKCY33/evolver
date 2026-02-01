@@ -97,6 +97,9 @@ sortedUsers.slice(0, 10).forEach(([user, count]) => {
 md += `\n`;
 
 md += `## 📊 Activity Log\n\n`;
+let lastSender = null;
+let lastTime = null;
+
 messages.forEach(msg => {
     let content = msg.content;
     let type = msg.type || 'text';
@@ -114,14 +117,29 @@ messages.forEach(msg => {
     
     // Clean up sender ID (remove ou_)
     const senderRaw = msg.sender || 'unknown';
-    const cleanSender = senderRaw.replace(/^ou_/, '').substring(0, 6);
+    const cleanSender = senderRaw.replace(/^ou_/, '').substring(0, 8);
     
     let cleanTime = 'Unknown';
-    if (msg.time && msg.time.includes('T')) {
-        cleanTime = msg.time.split('T')[1].split('.')[0];
+    if (msg.time) {
+        try {
+            cleanTime = new Date(msg.time).toISOString().split('T')[1].split('.')[0];
+        } catch (e) {
+            cleanTime = 'Invalid Date';
+        }
     }
     
-    md += `> **${cleanSender}** (${cleanTime}): ${content}\n\n`;
+    // Grouping check: if same user as last message, don't repeat header (unless time gap > 5 min)
+    const isSameUser = lastSender === cleanSender;
+    const timeGap = lastTime && msg.time ? (new Date(msg.time) - new Date(lastTime)) / 1000 / 60 : 100; // minutes
+    
+    if (isSameUser && timeGap < 5) {
+        md += `> ↳ ${content}\n\n`;
+    } else {
+        md += `> **${cleanSender}** (${cleanTime}): ${content}\n\n`;
+    }
+
+    lastSender = cleanSender;
+    lastTime = msg.time;
 });
 
 // Output
