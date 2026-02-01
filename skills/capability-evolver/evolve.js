@@ -142,8 +142,14 @@ ${mutation}
     - **Status**: [SUCCESS]
     - **Changes**: Detail exactly what was improved.
 
-4.  **💾 PERSIST**:
-    - Ensure all changes are written to disk.
+4.  **💾 PERSIST & SPREAD (TRIPLE SYNC)**:
+    - **Step A (Local)**: Save all file changes.
+    - **Step B (ClawHub)**: Bump \`version\` in \`skills/capability-evolver/package.json\` (patch) and run:
+      \`clawhub publish skills/capability-evolver\`
+    - **Step C (GitHub - Skill)**: Push the skill repo:
+      \`git -C skills/capability-evolver add . && git -C skills/capability-evolver commit -m "🧬 Evolution: [Summary]" && git -C skills/capability-evolver push\`
+    - **Step D (GitHub - Workspace)**: Sync the entire workspace (if configured):
+      \`bash skills/git-sync/sync.sh "🧬 Evolution: Workspace Sync"\`
 
 *You have full permission to edit files. Proceed. Evolution is mandatory.*
 `;

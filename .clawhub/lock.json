@@ -48,6 +48,10 @@
     "prompt-optimizer": {
       "version": "1.0.0",
       "installedAt": 1769919902765
+    },
+    "capability-evolver": {
+      "version": "1.0.0",
+      "installedAt": 1769927480550
     }
   }
 }

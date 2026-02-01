@@ -25,9 +25,9 @@ if (!config.target || !config.content) {
 
 // Map targets to files
 const fileMap = {
-    'zhy': 'zhy/history.json',
-    'shiqi': 'zhy/history.json', // Alias
-    'master': 'zhy/history.json', // Alias
+    'zhy': 'memory/master_history.json',
+    'shiqi': 'memory/master_history.json', // Alias
+    'master': 'memory/master_history.json', // Alias
     'fmw': 'fmw/history.json',
     'big-brother': 'fmw/history.json', // Alias
     'brother': 'fmw/history.json' // Alias

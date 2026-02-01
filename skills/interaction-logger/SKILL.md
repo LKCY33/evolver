@@ -12,7 +12,7 @@ node skills/interaction-logger/log.js --target <target_alias> --role <role> --co
 ## Arguments
 
 - `--target`: The user alias.
-  - `zhy`, `shiqi`, `master` -> `zhy/history.json`
+  - `zhy`, `shiqi`, `master` -> `memory/master_history.json`
   - `fmw`, `big-brother` -> `fmw/history.json`
 - `--role`: Who is speaking (`user` | `assistant` | `system`). Default: `assistant`.
 - `--content`: The text content to log.

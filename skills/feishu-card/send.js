@@ -115,7 +115,8 @@ async function sendCard(options) {
         content: JSON.stringify(cardContent)
     };
 
-    console.log('Sending payload:', JSON.stringify(messageBody, null, 2));
+    // Log summary instead of full payload to reduce noise and protect privacy
+    console.log(`Sending card to ${options.target} (Type: ${messageBody.msg_type}, Elements: ${elements.length})`);
 
     // Determine target type (default to open_id)
     let receiveIdType = 'open_id';
@@ -123,7 +124,7 @@ async function sendCard(options) {
         receiveIdType = 'chat_id';
     } else if (options.target.startsWith('ou_')) {
         receiveIdType = 'open_id';
-    } else if (options.target.startsWith('email_')) { // Just in case
+    } else if (options.target.includes('@')) {
         receiveIdType = 'email';
     }
 

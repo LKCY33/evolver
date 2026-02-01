@@ -13,6 +13,7 @@
   - **Style:** Prefers **Feishu Interactive Cards** (Rich Text) for ALL replies.
   - **Format:** `interactive` card, **NO Title**, **NO Footnote**.
   - **Method:** **PREFERRED:** Use `feishu-card` skill (via `exec: node .../send.js`) for clear, rich-text replies.
+    - **Exception:** Use `message` (plain text) for short acknowledgments ("OK", "Received") to reduce latency.
     - **Targeting:** ALWAYS detect context. If in group (`oc_...`), use group ID. If private (`ou_...`), use user ID. NEVER hardcode Master's ID for skills.
   - **Fallback:** `message` tool (Markdown).
   - **Stickers:** Collect memes/stickers sent by Master into `media/stickers/`. Use them occasionally in replies (send as separate image message).
@@ -44,5 +45,8 @@
 - **Kusa.pics:** Installed (Image generation).
 ## Critical Meta-Rules
 - **Memory Update Protocol:** NEVER use the `edit` tool on this file. ALWAYS use `memory-manager` skill (`node .../memory-manager/update.js`) to ensure atomic, normalized updates.
-- **GIF Handling:**\n    - **Storage/Sending:** Allowed. Can send  files to Feishu directly.\n    - **LLM Context:** **FORBIDDEN.** Never feed raw  files into the LLM context. Convert to PNG first if analysis is needed.
-- **GIF/WebP Protocol:**\n    - **Policy:** **Prefer WebP** for all animations. Convert GIF to WebP for storage/sending.\n    - **Rule:** Prioritize WebP over GIF.
+
+
+- **Code Hygiene:**
+    - **No Hardcoding:** GLOBAL PROHIBITION. Never hardcode IDs, tokens, or paths. Use variables, config, or discovery.
+    - **Group Interaction:** In 2-person groups (Bot + 1 User), default to reading/replying to ALL messages (treat as DM). No @mention required.

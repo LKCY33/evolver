@@ -26,8 +26,8 @@ function safeUpdate(filePath, options) {
     let modified = false;
 
     if (options.operation === 'replace') {
-        const search = options.old ? options.old : options.search; // Alias
-        const replace = options.new ? options.new : options.replace; // Alias
+        const search = (options.old !== undefined) ? options.old : options.search;
+        const replace = (options.new !== undefined) ? options.new : options.replace;
         
         if (!search || replace === undefined) {
             console.error("Replace operation requires --old/--search and --new/--replace");
