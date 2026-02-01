@@ -141,13 +141,24 @@ function readRecentLog(filePath, size = 10000) {
 function checkSystemHealth() {
     let report = [];
     try {
-        // Disk usage
-        const df = execSync('df -h /', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000 });
-        const lines = df.trim().split('\n');
-        if (lines.length > 1) {
-            // parsing: Filesystem Size Used Avail Use% Mounted on
-            const parts = lines[1].split(/\s+/);
-            report.push(`Disk: ${parts[4]} (${parts[3]} free)`);
+        // Optimization: Use native Node.js fs.statfsSync instead of spawning 'df'
+        if (fs.statfsSync) {
+            const stats = fs.statfsSync('/');
+            const total = stats.blocks * stats.bsize;
+            const free = stats.bfree * stats.bsize;
+            const used = total - free;
+            const freeGb = (free / 1024 / 1024 / 1024).toFixed(1);
+            const usedPercent = Math.round((used / total) * 100);
+            report.push(`Disk: ${usedPercent}% (${freeGb}G free)`);
+        } else {
+            // Fallback for older Node versions
+            const df = execSync('df -h /', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000 });
+            const lines = df.trim().split('\n');
+            if (lines.length > 1) {
+                // parsing: Filesystem Size Used Avail Use% Mounted on
+                const parts = lines[1].split(/\s+/);
+                report.push(`Disk: ${parts[4]} (${parts[3]} free)`);
+            }
         }
     } catch (e) {}
 
@@ -168,7 +179,9 @@ function checkSystemHealth() {
 
 function getMutationDirective(logContent) {
     // Adaptive Logic: Analyze recent logs for stability
-    const errorCount = (logContent.match(/\[ERROR/g) || []).length + (logContent.match(/"isError":true/g) || []).length;
+    // Optimization: Regex now catches more error variants (Error:, Exception:, FAIL)
+    const errorMatches = logContent.match(/\[ERROR|Error:|Exception:|FAIL|Failed|"isError":true/gi) || [];
+    const errorCount = errorMatches.length;
     const isUnstable = errorCount > 2;
 
     const roll = Math.floor(Math.random() * 100) + 1;
