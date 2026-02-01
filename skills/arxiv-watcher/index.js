@@ -3,10 +3,15 @@ const fs = require('fs');
 const path = require('path');
 
 const ARGS = process.argv.slice(2);
-// Parse flags
-const WATCH_MODE = ARGS.includes('--watch');
-const QUERY_ARG_INDEX = ARGS.findIndex(a => !a.startsWith('-'));
-let QUERY = (QUERY_ARG_INDEX !== -1 ? ARGS[QUERY_ARG_INDEX] : 'all:artificial intelligence');
+
+// Parse --format flag
+let OUTPUT_FORMAT = 'json';
+const formatFlagIndex = ARGS.indexOf('--format');
+if (formatFlagIndex !== -1 && ARGS[formatFlagIndex + 1]) {
+    OUTPUT_FORMAT = ARGS[formatFlagIndex + 1];
+    // Remove from ARGS so it doesn't mess up query detection
+    ARGS.splice(formatFlagIndex, 2);
+}
 
 // Parse --limit flag
 const limitFlagIndex = ARGS.indexOf('--limit');
@@ -15,8 +20,19 @@ if (limitFlagIndex !== -1 && ARGS[limitFlagIndex + 1]) {
     const parsedLimit = parseInt(ARGS[limitFlagIndex + 1], 10);
     if (!isNaN(parsedLimit) && parsedLimit > 0) {
         MAX_RESULTS = parsedLimit;
+        ARGS.splice(limitFlagIndex, 2);
     }
 }
+
+// Parse flags
+const WATCH_MODE = ARGS.includes('--watch');
+if (WATCH_MODE) {
+    const watchIndex = ARGS.indexOf('--watch');
+    ARGS.splice(watchIndex, 1);
+}
+
+const QUERY_ARG_INDEX = ARGS.findIndex(a => !a.startsWith('-'));
+let QUERY = (QUERY_ARG_INDEX !== -1 ? ARGS[QUERY_ARG_INDEX] : 'all:artificial intelligence');
 
 
 // State file for --watch mode
@@ -176,10 +192,19 @@ async function main() {
 
         // Output logic
         if (papers.length > 0) {
-            console.log(JSON.stringify(papers, null, 2));
+            if (OUTPUT_FORMAT === 'markdown') {
+                const md = papers.map(p => {
+                    const auth = p.authors.slice(0, 3).join(', ') + (p.authors.length > 3 ? ' et al.' : '');
+                    const date = p.published ? p.published.split('T')[0] : '';
+                    return `- **${p.title}**\n  *${auth}* (${date}) [PDF](${p.pdf_link || '#'})\n  > ${p.summary.slice(0, 300)}...`;
+                }).join('\n\n');
+                console.log(md);
+            } else {
+                console.log(JSON.stringify(papers, null, 2));
+            }
         } else {
-            // Output empty array if nothing found (to be valid JSON)
-            console.log("[]");
+            if (OUTPUT_FORMAT === 'markdown') console.log("_No results found._");
+            else console.log("[]");
         }
 
     } catch (error) {

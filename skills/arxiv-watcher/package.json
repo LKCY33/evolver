@@ -1,7 +1,7 @@
 {
   "name": "arxiv-watcher",
-  "version": "1.0.0",
-  "description": "Search and summarize papers from ArXiv.",
+  "version": "1.1.0",
+  "description": "Search and summarize papers from ArXiv. Supports JSON and Markdown output.",
   "main": "index.js",
   "scripts": {
     "search": "node index.js",
