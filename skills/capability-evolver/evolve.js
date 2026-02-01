@@ -231,15 +231,17 @@ async function run() {
     const cycleId = `Cycle #${cycleNum}`;
     
     // Reporting Directive Logic
+    const hasFeishuCard = fs.existsSync(path.join(skillsDir, 'feishu-card'));
+    
     let reportingDirective = `3.  **📝 REPORT**:
     - Use \`message\` tool.
     - **Title**: 🧬 Evolution ${cycleId}
     - **Status**: [SUCCESS]
     - **Changes**: Detail exactly what was improved.`;
 
-    if (process.env.EVOLVE_REPORT_TOOL === 'feishu-card') {
+    if (process.env.EVOLVE_REPORT_TOOL === 'feishu-card' || hasFeishuCard) {
         reportingDirective = `3.  **📝 REPORT (MANDATORY)**:
-    - You **MUST** use the \`feishu-card\` skill (NOT the generic \`message\` tool).
+    - You **MUST** use the \`feishu-card\` skill (NOT the generic \`message\` tool) if possible.
     - **Frequency**: The Master requested "more sync". You MUST report EVERY cycle.
     - **Command**:
       \`\`\`bash
