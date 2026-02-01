@@ -515,25 +515,37 @@ function getAutoTarget() {
         const menuPath = path.resolve(__dirname, '../../memory/menu_events.json');
         if (fs.existsSync(menuPath)) {
             // Optimization: Read only last 10KB to avoid parsing huge JSON array
-            const stats = fs.statSync(menuPath);
-            const size = stats.size;
-            const readSize = Math.min(size, 10240); // 10KB tail
-            const buffer = Buffer.alloc(readSize);
-            const fd = fs.openSync(menuPath, 'r');
-            fs.readSync(fd, buffer, 0, readSize, size - readSize);
-            fs.closeSync(fd);
-            const tail = buffer.toString('utf8');
-            
-            // Find last "open_id": "ou_..." OR "chat_id": "oc_..." (Group or User)
-            const matches = [...tail.matchAll(/"(?:open_id|chat_id|user_id|open_chat_id)"\s*:\s*"(o[uc]_[a-z0-9]+)"/g)];
-            if (matches.length > 0) {
-                 const lastId = matches[matches.length - 1][1];
-                 console.log(`[Feishu-Card] Target Source: menu_events.json (Tail Search: ${lastId})`);
-                 return lastId;
+            try {
+                const stats = fs.statSync(menuPath);
+                const size = stats.size;
+                const readSize = Math.min(size, 10240); // 10KB tail
+                const buffer = Buffer.alloc(readSize);
+                const fd = fs.openSync(menuPath, 'r');
+                fs.readSync(fd, buffer, 0, readSize, size - readSize);
+                fs.closeSync(fd);
+                const tail = buffer.toString('utf8');
+                
+                // Find last "open_id": "ou_..." OR "chat_id": "oc_..." (Group or User)
+                const matches = [...tail.matchAll(/"(?:open_id|chat_id|user_id|open_chat_id)"\s*:\s*"(o[uc]_[a-z0-9]+)"/g)];
+                if (matches.length > 0) {
+                    const lastId = matches[matches.length - 1][1];
+                    console.log(`[Feishu-Card] Target Source: menu_events.json (Tail Search: ${lastId})`);
+                    return lastId;
+                }
+            } catch (innerErr) {
+                console.warn(`[Feishu-Card] Optimized read failed (${innerErr.message}). Falling back to full read.`);
+                // Fallback: Full Read
+                const fullContent = fs.readFileSync(menuPath, 'utf8');
+                const matches = [...fullContent.matchAll(/"(?:open_id|chat_id|user_id|open_chat_id)"\s*:\s*"(o[uc]_[a-z0-9]+)"/g)];
+                if (matches.length > 0) {
+                     const lastId = matches[matches.length - 1][1];
+                     console.log(`[Feishu-Card] Target Source: menu_events.json (Full Scan: ${lastId})`);
+                     return lastId;
+                }
             }
         }
     } catch (e) {
-        // Fallback to full read if optimization fails (unlikely)
+        console.warn(`[Feishu-Card] Failed to read menu_events.json: ${e.message}`);
     }
     
     // 5. Parse USER.md for Master ID (Robust Fallback)
