@@ -44,6 +44,13 @@ if [ -z "$CURRENT_BRANCH" ]; then
     exit 1
 fi
 
+# Harden: Ensure git identity is configured
+if [ -z "$(git config user.email)" ]; then
+    git config user.email "agent@openclaw.ai"
+    git config user.name "OpenClaw Agent"
+    log "⚙️  Auto-configured git user identity."
+fi
+
 # 1. Commit Local Changes
 COMMITTED=0
 if [ -n "$(git status --porcelain)" ]; then
@@ -52,7 +59,9 @@ if [ -n "$(git status --porcelain)" ]; then
   
   # Capture commit output to handle "nothing to commit" gracefully
   if COMMIT_OUT=$(git commit -m "$MSG" 2>&1); then
-    log "Commit successful."
+    # Extract summary line (e.g., "1 file changed...")
+    SUMMARY=$(echo "$COMMIT_OUT" | grep "changed" | head -n 1)
+    log "Commit successful. $SUMMARY"
     COMMITTED=1
   else
     # Check if failure was due to empty commit (e.g. dirty submodules)
