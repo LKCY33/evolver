@@ -43,22 +43,38 @@ async function getToken() {
 }
 
 async function uploadImage(token, filePath) {
-    const formData = new FormData();
-    formData.append('image_type', 'message');
-    formData.append('image', fs.createReadStream(filePath));
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 1000;
 
-    try {
-        const axios = require('axios');
-        const res = await axios.post('https://open.feishu.cn/open-apis/im/v1/images', formData, {
-            headers: {
-                'Authorization': `Bearer ${token}`,
-                ...formData.getHeaders()
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+        try {
+            const formData = new FormData();
+            formData.append('image_type', 'message');
+            // Re-create stream for each attempt to avoid "stream closed" errors
+            formData.append('image', fs.createReadStream(filePath));
+
+            const axios = require('axios');
+            const res = await axios.post('https://open.feishu.cn/open-apis/im/v1/images', formData, {
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    ...formData.getHeaders()
+                },
+                timeout: 10000 // 10s timeout
+            });
+            return res.data.data.image_key;
+        } catch (e) {
+            const isLast = attempt === MAX_RETRIES;
+            const errMsg = e.response ? JSON.stringify(e.response.data) : e.message;
+            console.warn(`[Attempt ${attempt}/${MAX_RETRIES}] Upload failed: ${errMsg}`);
+            
+            if (isLast) {
+                console.error('Final upload failure.');
+                process.exit(1);
             }
-        });
-        return res.data.data.image_key;
-    } catch (e) {
-        console.error('Upload failed:', e.response ? e.response.data : e.message);
-        process.exit(1);
+            
+            // Wait before retry
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * attempt));
+        }
     }
 }
 
