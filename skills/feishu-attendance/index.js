@@ -2,7 +2,8 @@ const yargs = require('yargs/yargs');
 const { hideBin } = require('yargs/helpers');
 const { getAllUsers, getAttendance, sendMessage } = require('./lib/api');
 
-const ADMIN_ID = 'ou_cdc63fe05e88c580aedead04d851fc04';
+// Allow overriding Admin ID via env var, fallback to Master's ID
+const ADMIN_ID = process.env.FEISHU_ADMIN_ID || 'ou_cdc63fe05e88c580aedead04d851fc04';
 
 async function main() {
   const argv = yargs(hideBin(process.argv))

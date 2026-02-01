@@ -1,6 +1,23 @@
 const fetch = require('node-fetch');
 const { getTenantAccessToken } = require('./auth');
 
+async function fetchWithRetry(url, options, retries = 3, delay = 1000) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const response = await fetch(url, options);
+      // If 5xx error, throw to trigger retry
+      if (response.status >= 500) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      return response;
+    } catch (error) {
+      if (i === retries - 1) throw error;
+      console.warn(`Request failed (${error.message}), retrying in ${delay}ms...`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
+
 async function getAllUsers() {
   const token = await getTenantAccessToken();
   let users = [];
@@ -8,7 +25,7 @@ async function getAllUsers() {
   
   do {
     const url = `https://open.feishu.cn/open-apis/contact/v3/users?department_id_type=open_department_id&department_id=0&page_size=50${pageToken ? '&page_token=' + pageToken : ''}`;
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
     const data = await response.json();
@@ -37,7 +54,7 @@ async function getAttendance(userIds, dateInt) {
   let allTasks = [];
 
   for (const chunk of chunks) {
-    const response = await fetch(url, {
+    const response = await fetchWithRetry(url, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${token}`,
@@ -60,13 +77,23 @@ async function getAttendance(userIds, dateInt) {
   return allTasks;
 }
 
-async function sendMessage(receiveId, text) {
+async function sendMessage(receiveId, content) {
   const token = await getTenantAccessToken();
-  const url = 'https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=open_id'; 
-  
   const type = receiveId.startsWith('ou_') ? 'open_id' : 'user_id';
+  
+  // Determine if content is text or card (JSON)
+  let msgType = 'text';
+  let bodyContent = '';
 
-  const response = await fetch(`https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${type}`, {
+  if (typeof content === 'object') {
+      msgType = 'interactive';
+      bodyContent = JSON.stringify(content);
+  } else {
+      msgType = 'text';
+      bodyContent = JSON.stringify({ text: content });
+  }
+
+  const response = await fetchWithRetry(`https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${type}`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -74,8 +101,8 @@ async function sendMessage(receiveId, text) {
     },
     body: JSON.stringify({
       receive_id: receiveId,
-      msg_type: 'text',
-      content: JSON.stringify({ text: text })
+      msg_type: msgType,
+      content: bodyContent
     })
   });
   
