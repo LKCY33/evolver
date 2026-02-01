@@ -484,17 +484,27 @@ function getAutoTarget() {
     try {
         const menuPath = path.resolve(__dirname, '../../memory/menu_events.json');
         if (fs.existsSync(menuPath)) {
-            const events = JSON.parse(fs.readFileSync(menuPath, 'utf8'));
-            if (Array.isArray(events) && events.length > 0) {
-                const lastEvent = events[events.length - 1];
-                // Check raw structure first for most detail
-                if (lastEvent.raw && lastEvent.raw.event && lastEvent.raw.event.operator && lastEvent.raw.event.operator.operator_id) {
-                     return lastEvent.raw.event.operator.operator_id.open_id;
-                }
-                if (lastEvent.userId && lastEvent.userId !== 'unknown') return lastEvent.userId;
+            // Optimization: Read only last 10KB to avoid parsing huge JSON array
+            const stats = fs.statSync(menuPath);
+            const size = stats.size;
+            const readSize = Math.min(size, 10240); // 10KB tail
+            const buffer = Buffer.alloc(readSize);
+            const fd = fs.openSync(menuPath, 'r');
+            fs.readSync(fd, buffer, 0, readSize, size - readSize);
+            fs.closeSync(fd);
+            const tail = buffer.toString('utf8');
+            
+            // Find last "open_id": "ou_..."
+            const matches = [...tail.matchAll(/"open_id"\s*:\s*"(ou_[a-z0-9]+)"/g)];
+            if (matches.length > 0) {
+                 const lastId = matches[matches.length - 1][1];
+                 console.log(`[Feishu-Card] Target Source: menu_events.json (Tail Search: ${lastId})`);
+                 return lastId;
             }
         }
-    } catch (e) {}
+    } catch (e) {
+        // Fallback to full read if optimization fails (unlikely)
+    }
     
     // 5. Parse USER.md for Master ID (Robust Fallback)
     try {
