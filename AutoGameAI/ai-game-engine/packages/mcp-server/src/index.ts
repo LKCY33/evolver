@@ -130,6 +130,43 @@ server.tool(
   async (args) => forwardToBabylon("babylon_get_entity", args)
 );
 
+// --- Component Tools ---
+
+// 6. Add Component
+server.tool(
+  "babylon_add_component",
+  "Add a component to an entity (e.g., Physics, Material, Script)",
+  {
+    entityName: z.string().describe("The name of the entity"),
+    componentType: z.string().describe("The type of component to add (e.g., 'PhysicsAggregate', 'StandardMaterial')"),
+    parameters: z.record(z.any()).optional().describe("Configuration parameters for the component"),
+  },
+  async (args) => forwardToBabylon("babylon_add_component", args)
+);
+
+// 7. Remove Component
+server.tool(
+  "babylon_remove_component",
+  "Remove a component from an entity",
+  {
+    entityName: z.string().describe("The name of the entity"),
+    componentType: z.string().describe("The type of component to remove"),
+  },
+  async (args) => forwardToBabylon("babylon_remove_component", args)
+);
+
+// 8. Update Component
+server.tool(
+  "babylon_update_component",
+  "Update a component on an entity",
+  {
+    entityName: z.string().describe("The name of the entity"),
+    componentType: z.string().describe("The type of component to update"),
+    parameters: z.record(z.any()).describe("New parameters for the component"),
+  },
+  async (args) => forwardToBabylon("babylon_update_component", args)
+);
+
 
 // Start the server
 async function main() {
