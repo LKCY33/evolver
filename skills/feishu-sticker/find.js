@@ -65,33 +65,48 @@ function search(index, query, emotion) {
     return results.sort((a, b) => b.score - a.score);
 }
 
-function run() {
+function findSticker(query, emotion, random = false) {
     const index = loadIndex();
-    const results = search(index, options.query, options.emotion);
+    const results = search(index, query, emotion);
 
-    if (results.length === 0) {
-        if (options.json) console.log(JSON.stringify({ found: false }));
-        else console.log("No matching stickers found.");
-        return;
-    }
+    if (results.length === 0) return null;
 
     let selected;
-    if (options.random) {
+    if (random) {
         // Pick random from top 3 (to add variety)
         const topN = results.slice(0, 3);
         selected = topN[Math.floor(Math.random() * topN.length)];
     } else {
         selected = results[0];
     }
+    return selected;
+}
 
-    if (options.json) {
-        console.log(JSON.stringify({ found: true, sticker: selected }));
+if (require.main === module) {
+    program
+      .option('-q, --query <text>', 'Search query (e.g., "angry cat", "happy")')
+      .option('-e, --emotion <emotion>', 'Filter by emotion (e.g., "happy", "sad")')
+      .option('--random', 'Pick a random result if multiple match', false)
+      .option('--json', 'Output JSON result', false);
+
+    program.parse(process.argv);
+    const options = program.opts();
+
+    const result = findSticker(options.query, options.emotion, options.random);
+
+    if (!result) {
+        if (options.json) console.log(JSON.stringify({ found: false }));
+        else console.log("No matching stickers found.");
     } else {
-        console.log(`Found: ${selected.filename}`);
-        console.log(`Path: ${selected.path}`);
-        console.log(`Emotion: ${selected.emotion}`);
-        console.log(`Keywords: ${selected.keywords.join(', ')}`);
+        if (options.json) {
+            console.log(JSON.stringify({ found: true, sticker: result }));
+        } else {
+            console.log(`Found: ${result.filename}`);
+            console.log(`Path: ${result.path}`);
+            console.log(`Emotion: ${result.emotion}`);
+            console.log(`Keywords: ${result.keywords.join(', ')}`);
+        }
     }
 }
 
-run();
+module.exports = { findSticker };

@@ -48,15 +48,38 @@ const main = async () => {
         log(`Target acquired: "${info.videoDetails.title}"`, 'HYPE');
         log(`Initiating quantum transfer to: ${outputPath}`);
 
+        // Stability: Load Cookies if available (Environment or Memory)
+        let cookies = process.env.YOUTUBE_COOKIES || '';
+        const cookieFile = path.resolve(__dirname, '../../memory/youtube_cookies.json');
+        if (!cookies && fs.existsSync(cookieFile)) {
+            try {
+                const content = fs.readFileSync(cookieFile, 'utf8');
+                // If JSON (EditThisCookie format), convert to string
+                if (content.trim().startsWith('[')) {
+                     const cookieJson = JSON.parse(content);
+                     cookies = cookieJson.map(c => `${c.name}=${c.value}`).join('; ');
+                } else {
+                     cookies = content.trim(); // Assume Netscape or Header string
+                }
+            } catch (e) { log(`Cookie load failed: ${e.message}`, 'ERROR'); }
+        }
+
+        const requestOptions = {
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+            }
+        };
+        
+        if (cookies) {
+            requestOptions.headers['Cookie'] = cookies;
+            log('Injecting auth cookies for enhanced access...', 'INFO');
+        }
+
         // Stability: Enforce audio+video filter and User-Agent to reduce 403s
         const video = ytdl(url, { 
             quality: 'highest',
             filter: 'audioandvideo', 
-            requestOptions: {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
-                }
-            }
+            requestOptions: requestOptions
         });
         
         video.pipe(fs.createWriteStream(outputPath));

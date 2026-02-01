@@ -1,5 +1,10 @@
 const os = require('os');
 const { execSync, spawnSync } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+const { program } = require('commander');
+const FormData = require('form-data');
 // Try to resolve ffmpeg-static from workspace root
 let ffmpegPath;
 try {
@@ -24,17 +29,21 @@ if (!APP_ID || !APP_SECRET) {
     process.exit(1);
 }
 
-async function getToken() {
+async function getToken(forceRefresh = false) {
     const now = Math.floor(Date.now() / 1000);
 
     // 1. Try Memory Cache (File)
-    if (fs.existsSync(TOKEN_CACHE_FILE)) {
+    if (!forceRefresh && fs.existsSync(TOKEN_CACHE_FILE)) {
         try {
             const cached = JSON.parse(fs.readFileSync(TOKEN_CACHE_FILE, 'utf8'));
             if (cached.token && cached.expire > now + 60) {
                 return cached.token;
             }
         } catch (e) {}
+    }
+
+    if (forceRefresh) {
+        try { if (fs.existsSync(TOKEN_CACHE_FILE)) fs.unlinkSync(TOKEN_CACHE_FILE); } catch(e) {}
     }
 
     try {
@@ -67,35 +76,57 @@ async function getToken() {
     }
 }
 
+async function executeWithAuthRetry(operation) {
+    let token = await getToken();
+    try {
+        return await operation(token);
+    } catch (e) {
+        const msg = e.message || '';
+        const isAuthError = msg.includes('9999166') || 
+                           (msg.toLowerCase().includes('token') && (msg.toLowerCase().includes('invalid') || msg.toLowerCase().includes('expire')));
+        
+        if (isAuthError) {
+            console.warn(`[Feishu-Sticker] Auth Error (${msg}). Refreshing token...`);
+            token = await getToken(true);
+            return await operation(token);
+        }
+        throw e;
+    }
+}
+
 async function uploadImage(token, filePath) {
     const MAX_RETRIES = 3;
     const RETRY_DELAY = 1000;
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
+            const fileBuffer = fs.readFileSync(filePath);
+            const blob = new Blob([fileBuffer]);
             const formData = new FormData();
             formData.append('image_type', 'message');
-            // Re-create stream for each attempt to avoid "stream closed" errors
-            formData.append('image', fs.createReadStream(filePath));
+            formData.append('image', blob, path.basename(filePath));
 
-            const axios = require('axios');
-            const res = await axios.post('https://open.feishu.cn/open-apis/im/v1/images', formData, {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    ...formData.getHeaders()
-                },
-                timeout: 10000 // 10s timeout
+            const res = await fetch('https://open.feishu.cn/open-apis/im/v1/images', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` },
+                body: formData
             });
-            return res.data.data.image_key;
-        } catch (e) {
-            const isLast = attempt === MAX_RETRIES;
-            const errMsg = e.response ? JSON.stringify(e.response.data) : e.message;
-            console.warn(`[Attempt ${attempt}/${MAX_RETRIES}] Upload failed: ${errMsg}`);
-            
-            if (isLast) {
-                console.error('Final upload failure.');
-                process.exit(1);
+            const data = await res.json();
+
+            if (data.code !== 0) {
+                if (data.code === 99991663 || data.code === 99991664 || data.code === 99991661) {
+                     throw new Error(`Feishu Auth Error: ${data.code} ${data.msg}`);
+                }
+                throw new Error(JSON.stringify(data));
             }
+            return data.data.image_key;
+        } catch (e) {
+            if (e.message.includes('Feishu Auth Error')) throw e;
+
+            const isLast = attempt === MAX_RETRIES;
+            console.warn(`[Attempt ${attempt}/${MAX_RETRIES}] Upload failed: ${e.message}`);
+            
+            if (isLast) throw e;
             
             // Wait before retry
             await new Promise(resolve => setTimeout(resolve, RETRY_DELAY * attempt));
@@ -104,7 +135,12 @@ async function uploadImage(token, filePath) {
 }
 
 async function sendSticker(options) {
-    const token = await getToken();
+    await executeWithAuthRetry(async (token) => {
+        return await sendStickerLogic(token, options);
+    });
+}
+
+async function sendStickerLogic(token, options) {
     const stickerDir = process.env.STICKER_DIR 
         ? path.resolve(process.env.STICKER_DIR) 
         : path.resolve(path.join(os.homedir(), '.openclaw/media/stickers'));
@@ -278,25 +314,32 @@ async function sendSticker(options) {
 
     // Send
     try {
-        const axios = require('axios');
-        const res = await axios.post(
-            `https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`,
-            {
+        const res = await fetch(`https://open.feishu.cn/open-apis/im/v1/messages?receive_id_type=${receiveIdType}`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
                 receive_id: options.target,
                 msg_type: 'image',
                 content: JSON.stringify({ image_key: imageKey })
-            },
-            {
-                headers: {
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
-                }
+            })
+        });
+        const data = await res.json();
+        
+        if (data.code !== 0) {
+            if (data.code === 99991663 || data.code === 99991664 || data.code === 99991661) {
+                 throw new Error(`Feishu Auth Error: ${data.code} ${data.msg}`);
             }
-        );
-        console.log('Success:', JSON.stringify(res.data.data, null, 2));
+            throw new Error(JSON.stringify(data));
+        }
+
+        console.log('Success:', JSON.stringify(data.data, null, 2));
     } catch (e) {
-        console.error('Send failed:', e.response ? e.response.data : e.message);
-        process.exit(1);
+        if (e.message.includes('Feishu Auth Error')) throw e;
+        console.error('Send failed:', e.message);
+        throw e; 
     }
 }
 
