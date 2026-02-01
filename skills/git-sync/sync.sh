@@ -20,6 +20,23 @@ TIMEOUT_CMD="timeout 120s"
 # Ensure we are in the correct directory
 cd "$REPO_DIR" || { log "Failed to cd to $REPO_DIR"; exit 1; }
 
+# Harden: Cleanup stale git index locks (>10 min old)
+GIT_LOCK=".git/index.lock"
+if [ -f "$GIT_LOCK" ]; then
+    if [[ "$OSTYPE" == "darwin"* ]]; then
+        LOCK_TIME=$(stat -f %m "$GIT_LOCK")
+    else
+        LOCK_TIME=$(stat -c %Y "$GIT_LOCK")
+    fi
+    CURRENT_TIME=$(date +%s)
+    AGE=$((CURRENT_TIME - LOCK_TIME))
+    
+    if [ $AGE -gt 600 ]; then
+        log "⚠️  Removing stale git lock (Age: ${AGE}s)"
+        rm -f "$GIT_LOCK"
+    fi
+fi
+
 # Auto-detect current branch
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [ -z "$CURRENT_BRANCH" ]; then
