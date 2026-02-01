@@ -30,21 +30,47 @@ function saveState(state) {
 
 // Helper: Append to history
 function appendToHistory(entries) {
-    let data = { sessions: [] };
+    if (entries.length === 0) return;
+
+    // 1. Check file format / Migrate if needed (Align with log.js JSONL strategy)
+    let needsMigration = false;
+    let legacySessions = [];
+    
     if (fs.existsSync(HISTORY_FILE)) {
         try {
-            data = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
-        } catch (e) {}
+            // Optimization: Read first 100 bytes to check signature
+            const fd = fs.openSync(HISTORY_FILE, 'r');
+            const buffer = Buffer.alloc(100);
+            const bytesRead = fs.readSync(fd, buffer, 0, 100, 0);
+            fs.closeSync(fd);
+            
+            const startContent = buffer.toString('utf8', 0, bytesRead).trim();
+            
+            // Legacy JSON format usually starts with {"sessions": [ ...
+            if (startContent.startsWith('{') && startContent.includes('"sessions"')) {
+                const fullContent = fs.readFileSync(HISTORY_FILE, 'utf8');
+                try {
+                    const parsed = JSON.parse(fullContent);
+                    if (parsed && Array.isArray(parsed.sessions)) {
+                        needsMigration = true;
+                        legacySessions = parsed.sessions;
+                    }
+                } catch (e) {
+                    // Not valid JSON, likely already JSONL or mixed. Assume JSONL.
+                }
+            }
+        } catch(e) {}
     }
-    if (!data.sessions) data.sessions = [];
-    
-    // Simple deduplication or just append?
-    // We treat "sessions" as a flat list of interaction blocks or daily sessions?
-    // The current structure seems to be { sessions: [ { timestamp, role, content } ] }
-    // Let's stick to that flat structure for now.
-    
-    data.sessions.push(...entries);
-    fs.writeFileSync(HISTORY_FILE, JSON.stringify(data, null, 2));
+
+    if (needsMigration) {
+        console.log(`[Sync] Migrating legacy JSON to JSONL: ${HISTORY_FILE}`);
+        const jsonl = legacySessions.map(s => JSON.stringify(s)).join('\n') + '\n';
+        fs.writeFileSync(HISTORY_FILE, jsonl);
+    }
+
+    // 2. Append new entries as JSONL
+    const newContent = entries.map(e => JSON.stringify(e)).join('\n') + '\n';
+    fs.appendFileSync(HISTORY_FILE, newContent);
 }
 
 async function run() {
