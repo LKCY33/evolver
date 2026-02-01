@@ -287,8 +287,17 @@ async function sendCardLogic(token, options) {
         // Safety: Truncate to avoid API limits (Feishu Card limit ~30k chars)
         const MAX_CHARS = 25000;
         if (contentText.length > MAX_CHARS) {
-            console.warn(`[Feishu-Card] Content too long (${contentText.length} chars). Truncating to ${MAX_CHARS}.`);
-            contentText = contentText.substring(0, MAX_CHARS) + '\n\n...(Output Truncated due to size limit)...';
+            const overflowDir = path.resolve(__dirname, '../../memory/logs');
+            try {
+                if (!fs.existsSync(overflowDir)) fs.mkdirSync(overflowDir, { recursive: true });
+                const overflowFile = path.join(overflowDir, `overflow_${Date.now()}.txt`);
+                fs.writeFileSync(overflowFile, contentText);
+                console.warn(`[Feishu-Card] Content too long (${contentText.length} chars). Truncating to ${MAX_CHARS}. Full content saved to ${overflowFile}`);
+                contentText = contentText.substring(0, MAX_CHARS) + `\n\n⚠️ **Output Truncated** (Size Limit). Full content saved locally to:\n\`${overflowFile}\``;
+            } catch (e) {
+                console.error(`[Feishu-Card] Failed to save overflow content: ${e.message}`);
+                contentText = contentText.substring(0, MAX_CHARS) + '\n\n...(Output Truncated due to size limit)...';
+            }
         }
 
         elements.push({
@@ -385,8 +394,17 @@ async function sendPlainTextFallback(token, receiveIdType, receiveId, text, titl
     // Safety: Truncate to avoid API limits (Feishu Text limit ~30k chars)
     const MAX_CHARS = 28000;
     if (finalContent.length > MAX_CHARS) {
-        console.warn(`[Feishu-Card] Fallback text too long (${finalContent.length} chars). Truncating.`);
-        finalContent = finalContent.substring(0, MAX_CHARS) + '\n\n...(Fallback Output Truncated)...';
+        const overflowDir = path.resolve(__dirname, '../../memory/logs');
+        try {
+            if (!fs.existsSync(overflowDir)) fs.mkdirSync(overflowDir, { recursive: true });
+            const overflowFile = path.join(overflowDir, `overflow_fallback_${Date.now()}.txt`);
+            fs.writeFileSync(overflowFile, finalContent);
+            console.warn(`[Feishu-Card] Fallback text too long (${finalContent.length} chars). Truncating. Full content saved to ${overflowFile}`);
+            finalContent = finalContent.substring(0, MAX_CHARS) + `\n\n⚠️ **Output Truncated** (Size Limit). Full content saved locally to:\n\`${overflowFile}\``;
+        } catch (e) {
+            console.error(`[Feishu-Card] Failed to save overflow content: ${e.message}`);
+            finalContent = finalContent.substring(0, MAX_CHARS) + '\n\n...(Fallback Output Truncated)...';
+        }
     }
 
     const messageBody = {
