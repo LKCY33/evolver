@@ -342,6 +342,13 @@ async function sendCardLogic(token, options) {
         content: JSON.stringify(cardObj)
     };
 
+    if (options.dryRun) {
+        console.log(`[DRY RUN] Would send card to ${options.target}:`);
+        console.log(JSON.stringify(messageBody, null, 2));
+        updateStats('card_success');
+        return;
+    }
+
     console.log(`Sending card to ${options.target} (Elements: ${elements.length})`);
 
     try {
@@ -459,7 +466,8 @@ program
   .option('--text-align <align>', 'Text alignment')
   .option('--image-path <path>', 'Path to local image to embed')
   .option('--image-alt <text>', 'Alt text for image')
-  .option('--json-elements <json>', 'Raw JSON string for card elements (overrides text/image)');
+  .option('--json-elements <json>', 'Raw JSON string for card elements (overrides text/image)')
+  .option('--dry-run', 'Simulate sending without network request');
 
 program.parse(process.argv);
 const options = program.opts();
