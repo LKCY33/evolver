@@ -23,7 +23,7 @@ if (!API_KEY) {
     process.exit(1);
 }
 
-const STICKER_DIR = "/home/crishaocredits/.openclaw/media/stickers";
+const STICKER_DIR = process.env.STICKER_DIR || "/home/crishaocredits/.openclaw/media/stickers";
 const TRASH_DIR = path.join(STICKER_DIR, "trash");
 const INDEX_FILE = path.join(STICKER_DIR, 'index.json');
 
@@ -32,6 +32,9 @@ const genAI = new GoogleGenerativeAI(API_KEY);
 // Use the specific model found via curl or fallback, allow env override
 const MODEL_NAME = process.env.GEMINI_MODEL || "gemini-2.0-flash";
 const model = genAI.getGenerativeModel({ model: MODEL_NAME });
+
+// Concurrency limit
+const CONCURRENCY = 3;
 
 if (!fs.existsSync(TRASH_DIR)) fs.mkdirSync(TRASH_DIR, { recursive: true });
 
@@ -44,12 +47,144 @@ function fileToGenerativePart(path, mimeType) {
   };
 }
 
+// Robust JSON parser
+function parseGeminiJson(text) {
+    try {
+        // Remove markdown code blocks
+        let clean = text.replace(/```json/g, "").replace(/```/g, "").trim();
+        // Sometimes Gemini puts extra text, try to find the first { and last }
+        const firstBrace = clean.indexOf('{');
+        const lastBrace = clean.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1) {
+            clean = clean.substring(firstBrace, lastBrace + 1);
+        }
+        return JSON.parse(clean);
+    } catch (e) {
+        return null;
+    }
+}
+
+// Atomic write to prevent corruption
+function saveIndex(index) {
+    const tempFile = `${INDEX_FILE}.tmp`;
+    try {
+        fs.writeFileSync(tempFile, JSON.stringify(index, null, 2));
+        fs.renameSync(tempFile, INDEX_FILE);
+    } catch (e) {
+        console.error("Failed to save index atomically:", e.message);
+    }
+}
+
+async function analyzeFile(file, index) {
+    let filePath = path.join(STICKER_DIR, file);
+    // Determine mime type
+    const ext = path.extname(file).toLowerCase();
+    let mimeType = ext === ".png" ? "image/png" : (ext === ".webp" ? "image/webp" : "image/jpeg");
+    let currentFile = file;
+
+    // GIF Handling
+    if (ext === '.gif') {
+        if (!ffmpegPath) {
+            console.log(`[SKIP] ${file} (no ffmpeg)`);
+            return;
+        }
+        
+        const webpPath = filePath.replace(/\.gif$/i, '.webp');
+        // Check if we already converted it but maybe index was lost?
+        if (fs.existsSync(webpPath)) {
+             // Use the existing conversion
+             console.log(`[ reusing ] Found existing conversion for ${file}`);
+             filePath = webpPath;
+             currentFile = path.basename(webpPath);
+             mimeType = "image/webp";
+        } else {
+            console.log(`[ converting ] ${file} -> WebP`);
+            try {
+                execSync(`${ffmpegPath} -i "${filePath}" -c:v libwebp -lossless 0 -q:v 75 -loop 0 -an -vsync 0 -y "${webpPath}"`, { stdio: 'pipe' });
+                // Delete original GIF only if conversion success
+                if (fs.existsSync(webpPath)) {
+                    fs.unlinkSync(filePath); 
+                    filePath = webpPath;
+                    currentFile = path.basename(webpPath);
+                    mimeType = "image/webp";
+                } else {
+                    throw new Error("Conversion failed (no output file)");
+                }
+            } catch (e) {
+                console.error(`[ ERROR ] Failed to convert ${file}: ${e.message}`);
+                return;
+            }
+        }
+        
+        if (index[currentFile]) {
+            console.log(`[ skip ] ${currentFile} is already indexed.`);
+            return; 
+        }
+    }
+
+    console.log(`[ analyzing ] ${currentFile}`);
+
+    try {
+      const prompt = `Analyze this image for a sticker/meme database.
+      Task: Determine if this is a usable "sticker" (expressive, meme, character) or just a random screenshot/photo.
+      
+      Output JSON ONLY: 
+      {
+        "is_sticker": boolean, 
+        "emotion": "string (e.g., happy, smug, angry, crying) or null",
+        "keywords": ["tag1", "tag2"]
+      }`;
+
+      const imagePart = fileToGenerativePart(filePath, mimeType);
+      
+      // Add timeout to fetch
+      const result = await Promise.race([
+          model.generateContent([prompt, imagePart]),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 20000))
+      ]);
+      
+      const response = await result.response;
+      const text = response.text();
+      const analysis = parseGeminiJson(text);
+
+      if (!analysis) {
+          console.error(`[ FAIL ] JSON parse error for ${currentFile}. Raw: ${text.slice(0, 50)}...`);
+          return;
+      }
+
+      if (!analysis.is_sticker) {
+        console.log(`[ 🗑️ TRASH ] ${currentFile} (Not a sticker)`);
+        // Safely move to trash (rename if exists)
+        const trashPath = path.join(TRASH_DIR, currentFile);
+        if (fs.existsSync(trashPath)) fs.unlinkSync(trashPath);
+        fs.renameSync(filePath, trashPath);
+        
+        if (index[currentFile]) delete index[currentFile]; 
+      } else {
+        console.log(`[ ✅ INDEX ] ${currentFile}: ${analysis.emotion}`);
+        
+        index[currentFile] = {
+            path: filePath,
+            emotion: analysis.emotion,
+            keywords: analysis.keywords || [],
+            addedAt: Date.now()
+        };
+      }
+      return true; // Signal that index changed
+
+    } catch (e) {
+      console.error(`[ ERROR ] ${currentFile}:`, e.message);
+      return false;
+    }
+}
+
 async function run() {
   // Load Index
   let index = {};
   if (fs.existsSync(INDEX_FILE)) {
       try { index = JSON.parse(fs.readFileSync(INDEX_FILE, 'utf8')); } catch (e) {
-          console.error("Failed to parse index.json, starting fresh.");
+          console.error("Failed to parse index.json. Backing up and starting fresh.");
+          if (fs.existsSync(INDEX_FILE)) fs.renameSync(INDEX_FILE, INDEX_FILE + '.bak');
       }
   }
 
@@ -62,138 +197,60 @@ async function run() {
   }
   
   // 1. Cleanup Stale Entries
-  let indexChanged = false;
+  let dirty = false;
   const initialIndexCount = Object.keys(index).length;
   for (const key of Object.keys(index)) {
       if (!allFiles.includes(key)) {
-          console.log(`Removing stale index entry: ${key}`);
-          delete index[key];
-          indexChanged = true;
+          // Check if file really missing (maybe readdir missed it? unlikely)
+          if (!fs.existsSync(path.join(STICKER_DIR, key))) {
+              delete index[key];
+              dirty = true;
+          }
       }
   }
-  if (indexChanged) {
-      console.log(`Cleaned up ${initialIndexCount - Object.keys(index).length} stale entries.`);
-  }
+  if (dirty) console.log(`Cleaned up ${initialIndexCount - Object.keys(index).length} stale entries.`);
 
-  // 2. Filter Files to Process
+  // 2. Filter Files
   const filesToProcess = allFiles.filter(file => {
     const ext = path.extname(file).toLowerCase();
     const isImage = [".jpg", ".jpeg", ".png", ".webp", ".gif"].includes(ext);
-    let isFile = false;
-    try { isFile = fs.statSync(path.join(STICKER_DIR, file)).isFile(); } catch (e) { return false; }
+    // Optimization: Don't stat every file if we don't have to. trust readdir usually.
+    // But we need to filter directories.
+    // Let's rely on extension primarily, and try/catch inside analyze.
     
-    const isIndexed = index.hasOwnProperty(file);
+    // Skip if in index (unless it's a GIF that needs conversion)
+    if (index[file]) return false;
     
-    // Process if it's a valid image AND (not indexed OR it's a GIF that might need conversion)
-    return isImage && isFile && (!isIndexed || ext === '.gif'); 
+    // If it's a GIF, we process it (to convert it).
+    // If it's an image and not in index, we process it.
+    return isImage;
   });
 
-  console.log(`Found ${filesToProcess.length} new or unindexed images to analyze.`);
+  console.log(`Found ${filesToProcess.length} pending files.`);
 
-  if (filesToProcess.length === 0 && !indexChanged) {
-      console.log("Nothing to do.");
-      // Just ensure index is saved if it changed
-      if (indexChanged) fs.writeFileSync(INDEX_FILE, JSON.stringify(index, null, 2));
+  if (filesToProcess.length === 0) {
+      if (dirty) saveIndex(index);
       return;
   }
 
-  for (const file of filesToProcess) {
-    let filePath = path.join(STICKER_DIR, file);
-    let mimeType = file.endsWith(".png") ? "image/png" : (file.endsWith(".webp") ? "image/webp" : "image/jpeg");
-    let currentFile = file;
-
-    // Convert GIF to WebP if found
-    if (file.toLowerCase().endsWith('.gif')) {
-        if (!ffmpegPath) {
-            console.log(`Skipping ${file} (ffmpeg not found for conversion)`);
-            continue;
-        }
-        console.log(`Converting GIF ${file} to WebP...`);
-        const webpPath = filePath.replace(/\.gif$/i, '.webp');
-        try {
-            execSync(`${ffmpegPath} -i "${filePath}" -c:v libwebp -lossless 0 -q:v 75 -loop 0 -an -vsync 0 -y "${webpPath}"`, { stdio: 'pipe' });
-            if (fs.existsSync(webpPath)) {
-                fs.unlinkSync(filePath); // Delete original GIF
-                filePath = webpPath;
-                currentFile = path.basename(webpPath);
-                mimeType = "image/webp";
-                console.log(`Converted to ${currentFile}`);
-                
-                // If the converted file is already indexed, we can skip analysis
-                if (index[currentFile]) {
-                    console.log(`Converted file ${currentFile} is already indexed. Skipping analysis.`);
-                    continue; 
-                }
-            }
-        } catch (e) {
-            console.error(`Failed to convert ${file}, skipping:`, e.message);
-            continue;
-        }
-    }
-
-    console.log(`Analyzing ${currentFile}... Using ${MODEL_NAME}`);
-
-    try {
-      const prompt = `Analyze this image. 
-      First, determine if it is a "sticker" or "meme" suitable for use in a chat conversation as a reaction.
-      It is NOT a sticker if it is a screenshot of UI, document, real photo of papers, or complex diagram.
-      It IS a sticker if it is a character, anime face, meme, or expressive icon.
+  // 3. Batched Processing
+  for (let i = 0; i < filesToProcess.length; i += CONCURRENCY) {
+      const batch = filesToProcess.slice(i, i + CONCURRENCY);
+      console.log(`Processing batch ${i + 1}-${Math.min(i + CONCURRENCY, filesToProcess.length)} / ${filesToProcess.length}`);
       
-      If it is a sticker, describe its EMOTION (e.g., happy, angry, confused, crying, smug) and KEYWORDS (e.g., cat, girl, computer, coffee).
+      const promises = batch.map(file => analyzeFile(file, index));
+      const results = await Promise.all(promises);
       
-      Reply with JSON ONLY: 
-      {
-        "is_sticker": boolean, 
-        "reason": "string",
-        "emotion": "string (or null if not sticker)",
-        "keywords": ["tag1", "tag2"] (or empty if not sticker)
-      }`;
-
-      const imagePart = fileToGenerativePart(filePath, mimeType);
-      const result = await model.generateContent([prompt, imagePart]);
-      const response = await result.response;
-      const text = response.text();
-      
-      console.log(`Response: ${text}`);
-
-      let analysis = {};
-      try {
-          const cleanJson = text.replace(/```json/g, "").replace(/```/g, "").trim();
-          analysis = JSON.parse(cleanJson);
-      } catch (e) {
-          console.error("JSON parse failed");
+      // Save if any change in batch
+      if (results.some(Boolean)) {
+          saveIndex(index);
       }
-
-      if (!analysis.is_sticker) {
-        console.log(`❌ Not a sticker. Moving to trash.`);
-        fs.renameSync(filePath, path.join(TRASH_DIR, currentFile));
-        // Remove from index if needed
-        if (index[currentFile]) delete index[currentFile]; 
-      } else {
-        console.log(`✅ Sticker confirmed: ${analysis.emotion} [${analysis.keywords?.join(', ')}]`);
-        
-        // Update index object
-        index[currentFile] = {
-            path: filePath,
-            emotion: analysis.emotion,
-            keywords: analysis.keywords,
-            addedAt: Date.now()
-        };
-        
-        // Write immediately to save progress
-        fs.writeFileSync(INDEX_FILE, JSON.stringify(index, null, 2));
-      }
-
-    } catch (e) {
-      console.error(`Error processing ${currentFile}:`, e.message);
-    }
-    
-    // Simple sleep to avoid rate limits
-    await new Promise(r => setTimeout(r, 1000));
+      
+      // Short delay between batches
+      await new Promise(r => setTimeout(r, 1000));
   }
   
-  // Final save
-  fs.writeFileSync(INDEX_FILE, JSON.stringify(index, null, 2));
+  console.log("Analysis complete.");
 }
 
 run();
