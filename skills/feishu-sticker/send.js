@@ -382,26 +382,14 @@ function getAutoTarget() {
 async function findSticker(options) {
     if (!options.query && !options.emotion) return null;
     
-    // Call find.js as a subprocess to leverage its logic
     try {
-        const findScript = path.join(__dirname, 'find.js');
-        const args = [findScript, '--json', '--random'];
-        if (options.query) args.push('--query', options.query);
-        if (options.emotion) args.push('--emotion', options.emotion);
+        const { findSticker: findStickerFn } = require('./find.js');
+        // Use true for 'random' parameter to keep behavior consistent with CLI default
+        const result = findStickerFn(options.query, options.emotion, true);
         
-        const child = spawnSync(process.execPath, args, { encoding: 'utf-8' });
-        
-        if (child.error) throw child.error;
-        if (child.status !== 0) {
-            // Only throw if meaningful error, otherwise fallback
-            if (child.stderr && child.stderr.trim()) throw new Error(child.stderr);
-        }
-        
-        const result = JSON.parse(child.stdout);
-        
-        if (result.found && result.sticker && result.sticker.path) {
-            console.log(`Smart match: ${result.sticker.emotion} [${result.sticker.keywords}]`);
-            return result.sticker.path;
+        if (result && result.path) {
+            console.log(`Smart match: ${result.emotion} [${result.keywords}]`);
+            return result.path;
         }
     } catch (e) {
         console.warn("Smart search failed, falling back to random:", e.message);
