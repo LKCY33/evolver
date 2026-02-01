@@ -11,6 +11,19 @@ const TOKEN_CACHE_FILE = path.resolve(__dirname, '../../memory/feishu_token.json
 const IMAGE_KEY_CACHE_FILE = path.resolve(__dirname, '../../memory/feishu_image_keys.json');
 const STATS_FILE = path.resolve(__dirname, '../../memory/feishu_card_stats.json');
 
+// Helper: Atomic JSON Write (prevents partial writes/corruption)
+function writeJsonAtomic(filePath, data) {
+    try {
+        const tempPath = `${filePath}.tmp.${Date.now()}`;
+        fs.writeFileSync(tempPath, JSON.stringify(data, null, 2));
+        fs.renameSync(tempPath, filePath); // Atomic on POSIX
+    } catch (e) {
+        console.error(`[Feishu-Card] Failed to write atomic JSON to ${filePath}: ${e.message}`);
+        // Attempt cleanup
+        try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (delErr) {}
+    }
+}
+
 // Helper: Update Telemetry Stats
 function updateStats(type, details = null) {
     try {
@@ -34,7 +47,7 @@ function updateStats(type, details = null) {
             stats.last_failure_time = Date.now();
         }
 
-        fs.writeFileSync(STATS_FILE, JSON.stringify(stats, null, 2));
+        writeJsonAtomic(STATS_FILE, stats);
     } catch (e) {
         // Silently fail on stats to not break main flow
     }
@@ -103,7 +116,7 @@ async function getToken() {
                 token: data.tenant_access_token,
                 expire: Math.floor(Date.now() / 1000) + data.expire 
             };
-            fs.writeFileSync(TOKEN_CACHE_FILE, JSON.stringify(cacheData, null, 2));
+            writeJsonAtomic(TOKEN_CACHE_FILE, cacheData);
         } catch (e) {
             console.error('Failed to cache token:', e.message);
         }
@@ -155,7 +168,7 @@ async function uploadImage(token, filePath) {
         
         const imageKey = data.data.image_key;
         cache[fileHash] = imageKey;
-        try { fs.writeFileSync(IMAGE_KEY_CACHE_FILE, JSON.stringify(cache, null, 2)); } catch(e) {}
+        try { writeJsonAtomic(IMAGE_KEY_CACHE_FILE, cache); } catch(e) {}
         
         return imageKey;
     } catch (e) {

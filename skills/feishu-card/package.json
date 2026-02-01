@@ -1,7 +1,7 @@
 {
   "name": "feishu-card",
-  "version": "1.4.0",
-  "description": "Send rich interactive cards to Feishu. v1.4.0 adds self-healing telemetry stats.",
+  "version": "1.4.1",
+  "description": "Send rich interactive cards to Feishu. v1.4.1 adds robust Auth Error retry logic.",
   "main": "send.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
