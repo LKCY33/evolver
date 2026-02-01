@@ -11,20 +11,39 @@ function readRealSessionLog() {
     try {
         if (!fs.existsSync(AGENT_SESSIONS_DIR)) return '[NO SESSION LOGS FOUND]';
         
+        // Get files with stats in one go if possible, or map
         const files = fs.readdirSync(AGENT_SESSIONS_DIR)
             .filter(f => f.endsWith('.jsonl'))
-            .map(f => ({ name: f, time: fs.statSync(path.join(AGENT_SESSIONS_DIR, f)).mtime.getTime() }))
+            .map(f => {
+                try {
+                    return { name: f, time: fs.statSync(path.join(AGENT_SESSIONS_DIR, f)).mtime.getTime() };
+                } catch (e) { return null; }
+            })
+            .filter(Boolean)
             .sort((a, b) => b.time - a.time); // Newest first
 
         if (files.length === 0) return '[NO JSONL FILES]';
 
-        // Read the latest 2 files to ensure context if the current one is fresh
+        // Read the latest 2 files
         let content = '';
+        const MAX_BYTES = 8000;
+        
         for (let i = 0; i < Math.min(2, files.length); i++) {
-             content = fs.readFileSync(path.join(AGENT_SESSIONS_DIR, files[i].name), 'utf8') + '\n' + content;
+             let fileContent = fs.readFileSync(path.join(AGENT_SESSIONS_DIR, files[i].name), 'utf8');
+             // Add a marker between files
+             if (content) content = `\n--- PREVIOUS SESSION (${files[i].name}) ---\n` + content;
+             content = fileContent + content;
+             if (content.length > MAX_BYTES * 2) break; // Don't over-read
         }
         
-        return content.slice(-4000); // Last 4KB
+        // Take the last chunk
+        let snippet = content.slice(-MAX_BYTES);
+        // Try to align to a line start to avoid broken JSON
+        const firstNewLine = snippet.indexOf('\n');
+        if (firstNewLine !== -1 && firstNewLine < 200) {
+            snippet = snippet.slice(firstNewLine + 1);
+        }
+        return snippet;
     } catch (e) {
         return `[ERROR READING SESSION LOGS: ${e.message}]`;
     }
@@ -88,9 +107,26 @@ async function run() {
                         if (pkg.description) desc = pkg.description.slice(0, 100) + (pkg.description.length > 100 ? '...' : '');
                     } catch (e) {
                         try {
-                            const skillMd = fs.readFileSync(path.join(skillsDir, name, 'SKILL.md'), 'utf8');
-                            const match = skillMd.match(/description:\s*(.*)/);
-                            if (match) desc = match[1].trim().slice(0, 100);
+                            const skillMdPath = path.join(skillsDir, name, 'SKILL.md');
+                            if (fs.existsSync(skillMdPath)) {
+                                const skillMd = fs.readFileSync(skillMdPath, 'utf8');
+                                // Strategy 1: YAML Frontmatter (description: ...)
+                                const yamlMatch = skillMd.match(/^description:\s*(.*)$/m);
+                                if (yamlMatch) {
+                                    desc = yamlMatch[1].trim();
+                                } else {
+                                    // Strategy 2: First non-header, non-empty line
+                                    const lines = skillMd.split('\n');
+                                    for (const line of lines) {
+                                        const trimmed = line.trim();
+                                        if (trimmed && !trimmed.startsWith('#') && !trimmed.startsWith('---') && !trimmed.startsWith('```')) {
+                                            desc = trimmed;
+                                            break;
+                                        }
+                                    }
+                                }
+                                if (desc.length > 100) desc = desc.slice(0, 100) + '...';
+                            }
                         } catch(e2) {}
                     }
                     return `- **${name}**: ${desc}`;
