@@ -177,9 +177,11 @@ async function executeWithAuthRetry(operation) {
 }
 
 async function uploadImage(token, filePath) {
+    let fileBuffer;
     let fileHash;
+    
     try {
-        const fileBuffer = fs.readFileSync(filePath);
+        fileBuffer = fs.readFileSync(filePath);
         fileHash = crypto.createHash('md5').update(fileBuffer).digest('hex');
     } catch (e) {
         console.error('Error reading image file:', e.message);
@@ -200,8 +202,8 @@ async function uploadImage(token, filePath) {
     
     const formData = new FormData();
     formData.append('image_type', 'message');
-    const fileContent = fs.readFileSync(filePath);
-    const blob = new Blob([fileContent]); 
+    // Reuse the buffer we already read
+    const blob = new Blob([fileBuffer]); 
     formData.append('image', blob, path.basename(filePath));
 
     try {
