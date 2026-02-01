@@ -114,21 +114,35 @@ try {
     let legacySessions = [];
 
     if (fs.existsSync(absolutePath)) {
-        // Robust check: Try parsing as full JSON object with 'sessions' key
+        // Optimization: Read only the first 64 bytes to check for legacy format
+        // Legacy starts with '{"sessions":' or similar JSON structure
         try {
-            const fileContent = fs.readFileSync(absolutePath, 'utf8');
-            // Optimization: Only parse if it looks like the legacy object structure
-            // Legacy starts with { and usually has "sessions" early on
-            if (fileContent.trim().startsWith('{')) {
-                const parsed = JSON.parse(fileContent);
-                if (parsed && Array.isArray(parsed.sessions)) {
-                    needsMigration = true;
-                    legacySessions = parsed.sessions;
+            const fd = fs.openSync(absolutePath, 'r');
+            const buffer = Buffer.alloc(64);
+            const bytesRead = fs.readSync(fd, buffer, 0, 64, 0);
+            fs.closeSync(fd);
+            
+            const startContent = buffer.toString('utf8', 0, bytesRead).trim();
+            
+            // Heuristic: If it starts with '{', it MIGHT be legacy.
+            // But a single JSONL line also starts with '{'.
+            // Legacy usually has "sessions" key near the start.
+            if (startContent.startsWith('{') && startContent.includes('"sessions"')) {
+                // Now we confirm by reading fully (only if heuristic matches)
+                const fileContent = fs.readFileSync(absolutePath, 'utf8');
+                try {
+                    const parsed = JSON.parse(fileContent);
+                    if (parsed && Array.isArray(parsed.sessions)) {
+                        needsMigration = true;
+                        legacySessions = parsed.sessions;
+                    }
+                } catch (e) {
+                    // Not valid JSON, likely JSONL
+                    needsMigration = false; 
                 }
             }
-        } catch (parseError) {
-            // JSON.parse fails on JSONL (multiple objects), which is good. 
-            // It means it's likely already JSONL or just plain text.
+        } catch (readErr) {
+            // If file access fails, assume no migration needed
             needsMigration = false;
         }
     }
