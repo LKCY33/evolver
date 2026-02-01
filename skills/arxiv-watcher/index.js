@@ -1,13 +1,32 @@
 // skills/arxiv-watcher/index.js
 const https = require('https');
+const fs = require('fs');
+const path = require('path');
 
 const ARGS = process.argv.slice(2);
-let QUERY = ARGS[0] || 'all:artificial intelligence';
-const MAX_RESULTS = ARGS[1] || 5;
+// Parse flags
+const WATCH_MODE = ARGS.includes('--watch');
+const QUERY_ARG_INDEX = ARGS.findIndex(a => !a.startsWith('-'));
+let QUERY = (QUERY_ARG_INDEX !== -1 ? ARGS[QUERY_ARG_INDEX] : 'all:artificial intelligence');
+const MAX_RESULTS = 10; // Default limit
+
+// State file for --watch mode
+const STATE_FILE = path.resolve(__dirname, '../../memory/arxiv_state.json');
 
 // Intelligent query handling
 if (!QUERY.includes(':')) {
     QUERY = `all:${QUERY}`;
+}
+
+function loadState() {
+    if (fs.existsSync(STATE_FILE)) {
+        try { return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8')); } catch (e) {}
+    }
+    return {};
+}
+
+function saveState(state) {
+    try { fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2)); } catch (e) {}
 }
 
 // Helper to fetch data
@@ -71,7 +90,7 @@ async function main() {
         // Remove the header (first part)
         entries.shift();
 
-        const papers = entries.map(entry => {
+        let papers = entries.map(entry => {
             const idMatch = /<id>(.*?)<\/id>/.exec(entry);
             const publishedMatch = /<published>(.*?)<\/published>/.exec(entry);
             const titleMatch = /<title[^>]*>([\s\S]*?)<\/title>/.exec(entry);
@@ -114,6 +133,31 @@ async function main() {
                 pdf_link: pdfLink
             };
         });
+
+        // Watch Mode Logic
+        if (WATCH_MODE) {
+            const state = loadState();
+            const lastCheck = state[QUERY] || 0; // Epoch or ISO string
+            const lastDate = new Date(lastCheck).getTime();
+            
+            // Filter new papers
+            const newPapers = papers.filter(p => new Date(p.published).getTime() > lastDate);
+            
+            // Update State (if we found anything newer)
+            if (papers.length > 0) {
+                // Find max date in current batch
+                const maxDateInBatch = papers.reduce((max, p) => {
+                    const t = new Date(p.published).getTime();
+                    return t > max ? t : max;
+                }, lastDate);
+                
+                state[QUERY] = new Date(maxDateInBatch).toISOString();
+                saveState(state);
+            }
+
+            papers = newPapers;
+            console.error(`[ArXiv] Watch Mode: Found ${papers.length} new papers since ${new Date(lastDate).toISOString()}`);
+        }
 
         console.log(JSON.stringify(papers, null, 2));
 

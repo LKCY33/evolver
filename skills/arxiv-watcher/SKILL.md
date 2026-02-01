@@ -18,9 +18,12 @@ This skill interacts with the ArXiv API to find and summarize the latest researc
 
 1. Use `node skills/arxiv-watcher/index.js "<query>" [limit]` to get the JSON results.
    - Example: `node skills/arxiv-watcher/index.js "cat:cs.AI" 3`
-2. Parse the JSON output (it provides Title, Authors, Summary, and PDF Link).
-3. Present the findings to the user.
-4. **MANDATORY**: Append the title, authors, date, and summary of any paper discussed to `memory/RESEARCH_LOG.md`. Use the format:
+2. **Watch Mode (New!)**: Use `--watch` to only see papers published since the last check.
+   - Example: `node skills/arxiv-watcher/index.js "LLM" --watch`
+   - This persists state to `memory/arxiv_state.json`.
+3. Parse the JSON output (it provides Title, Authors, Summary, and PDF Link).
+4. Present the findings to the user.
+5. **MANDATORY**: Append the title, authors, date, and summary of any paper discussed to `memory/RESEARCH_LOG.md`. Use the format:
    ```markdown
    ### [YYYY-MM-DD] TITLE_OF_PAPER
    - **Authors**: Author List
