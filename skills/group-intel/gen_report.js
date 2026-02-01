@@ -55,6 +55,9 @@ if (totalMessages === 0) {
 }
 
 const users = {};
+const msgTypes = {};
+const hourlyActivity = new Array(24).fill(0);
+
 // Sort messages by time just in case, handle missing time safely
 messages.sort((a, b) => {
     const tA = a.time ? new Date(a.time).getTime() : 0;
@@ -68,6 +71,18 @@ const timeEnd = messages[messages.length - 1]?.time || 'Unknown';
 messages.forEach(msg => {
     const sender = msg.sender || 'unknown_user';
     users[sender] = (users[sender] || 0) + 1;
+
+    // Type Analysis
+    const type = msg.type || 'text';
+    msgTypes[type] = (msgTypes[type] || 0) + 1;
+
+    // Hourly Analysis
+    if (msg.time) {
+        try {
+            const hour = new Date(msg.time).getHours();
+            if (hour >= 0 && hour < 24) hourlyActivity[hour]++;
+        } catch (e) {}
+    }
 });
 
 const sortedUsers = Object.entries(users).sort((a, b) => b[1] - a[1]);
@@ -94,6 +109,23 @@ const maxMsgs = sortedUsers.length > 0 ? sortedUsers[0][1] : 0;
 sortedUsers.slice(0, 10).forEach(([user, count]) => {
     const name = user.replace(/^ou_/, '').substring(0, 8);
     md += `| ${name} | ${count} | ${generateBar(count, maxMsgs, 10)} |\n`;
+});
+md += `\n`;
+
+md += `## 📈 Temporal Analysis (Peak Hours)\n\n`;
+const maxHourly = Math.max(...hourlyActivity);
+md += `\`\`\`\n`; // Code block for alignment
+for (let i = 0; i < 24; i++) {
+    if (hourlyActivity[i] > 0) {
+        const hourStr = i.toString().padStart(2, '0') + ':00';
+        md += `${hourStr} | ${generateBar(hourlyActivity[i], maxHourly, 15)} (${hourlyActivity[i]})\n`;
+    }
+}
+md += `\`\`\`\n\n`;
+
+md += `## 🧩 Content Breakdown\n\n`;
+Object.entries(msgTypes).forEach(([type, count]) => {
+    md += `- **${type}**: ${count}\n`;
 });
 md += `\n`;
 

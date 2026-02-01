@@ -1,6 +1,6 @@
 {
   "name": "sticker-analyzer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Analyze images in media/stickers using Vision API to identify and filter meme/sticker content.",
   "main": "analyze.js",
   "scripts": {

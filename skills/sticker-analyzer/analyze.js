@@ -210,6 +210,7 @@ async function analyzeFile(file, index) {
             path: filePath,
             emotion: analysis.emotion,
             keywords: analysis.keywords || [],
+            hash: fileHash,
             addedAt: Date.now()
         };
       }
@@ -224,7 +225,18 @@ async function analyzeFile(file, index) {
 async function run() {
   let index = {};
   if (fs.existsSync(INDEX_FILE)) {
-      try { index = JSON.parse(fs.readFileSync(INDEX_FILE, 'utf8')); } catch (e) {
+      try { 
+          index = JSON.parse(fs.readFileSync(INDEX_FILE, 'utf8')); 
+          // Optimization: Backfill hashes for legacy entries
+          let backfilled = 0;
+          Object.keys(index).forEach(key => {
+              if (!index[key].hash && fs.existsSync(index[key].path)) {
+                  index[key].hash = getFileHash(index[key].path);
+                  backfilled++;
+              }
+          });
+          if (backfilled > 0) console.log(`[ UPDATE ] Backfilled MD5 hashes for ${backfilled} stickers.`);
+      } catch (e) {
           console.error("Corrupt index.json, starting fresh.");
           if (fs.existsSync(INDEX_FILE)) fs.renameSync(INDEX_FILE, INDEX_FILE + '.bak');
       }

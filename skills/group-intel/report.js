@@ -1,5 +1,7 @@
 const { program } = require('commander');
 const fs = require('fs');
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
 
 // Mutation: Random Generators
 const CODENAMES = [
@@ -30,7 +32,10 @@ const persona = getRandom(PERSONAS);
 const directive = getRandom(DIRECTIVES);
 const missionId = Math.random().toString(36).substring(7).toUpperCase();
 
-const MASTER_ID = "ou_cdc63fe05e88c580aedead04d851fc04";
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '../../.env') });
+
+const MASTER_ID = process.env.MASTER_ID || "ou_cdc63fe05e88c580aedead04d851fc04";
 
 console.log(`
 ╔════════════════════════════════════════════════════════════════╗
