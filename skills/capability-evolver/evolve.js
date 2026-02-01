@@ -140,6 +140,16 @@ function readRecentLog(filePath, size = 10000) {
 function checkSystemHealth() {
     let report = [];
     try {
+        // Uptime & Node Version
+        const uptime = (os.uptime() / 3600).toFixed(1);
+        report.push(`Uptime: ${uptime}h`);
+        report.push(`Node: ${process.version}`);
+
+        // Memory Usage (RSS)
+        const mem = process.memoryUsage();
+        const rssMb = (mem.rss / 1024 / 1024).toFixed(1);
+        report.push(`Agent RSS: ${rssMb}MB`);
+
         // Optimization: Use native Node.js fs.statfsSync instead of spawning 'df'
         if (fs.statfsSync) {
             const stats = fs.statfsSync('/');
