@@ -2,6 +2,8 @@
 
 **The Self-Evolution Engine for OpenClaw Agents.**
 
+![Capability Evolver Cover](assets/cover.png)
+
 [![ClawHub](https://img.shields.io/badge/ClawHub-Install-blue)](https://www.clawhub.ai/autogame-17/capability-evolver)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
