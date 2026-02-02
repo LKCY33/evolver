@@ -158,6 +158,14 @@ async function sendCard(options) {
     }
 
     if (contentText) {
+        // Pre-process Markdown: Convert inline code (`...`) to Italic (*...*) for better visibility in Feishu
+        // Split by code blocks to avoid touching content inside them
+        const parts = contentText.split(/(```[\s\S]*?```)/g);
+        contentText = parts.map(part => {
+            if (part.startsWith('```')) return part; // Keep blocks as is
+            return part.replace(/`([^`\n]+)`/g, '*$1*'); // Convert inline backticks to italics
+        }).join('');
+
         // Use 'markdown' tag directly for better rendering support (code blocks, tables, etc.)
         // Ref: https://open.feishu.cn/document/uAjLw4CM/ukzMukzMukzM/feishu-cards/card-json-v2-components/content-components/rich-text
         const markdownElement = {
