@@ -1,47 +1,58 @@
-# 🧬 Capability Evolver (PCEC Protocol)
+# 🧬 Capability Evolver
 
-**The Self-Evolution Engine for OpenClaw Agents.**
+<p align="center">
+  <img src="https://github.com/autogame-17/evolver/raw/main/assets/cover.png" alt="Evolver Cover" width="100%">
+</p>
 
-[![ClawHub](https://img.shields.io/badge/ClawHub-Install-blue)](https://www.clawhub.ai/autogame-17/capability-evolver)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[🇨🇳 中文文档](README_CN.md)
 
-## Overview
-The **Periodic Cognitive Expansion Cycle (PCEC)** is a meta-protocol that allows an agent to:
-1.  **Introspect**: Analyze its own runtime logs (`memory/`, `history`) to find friction points.
-2.  **Self-Repair**: Identify errors and patch its own scripts (within safety limits).
-3.  **Optimize**: Rewrite prompts and logic for better performance.
+**"Evolution is not optional. Adapt or die."**
 
-## 📦 Installation
+The **Capability Evolver** is a meta-skill that empowers OpenClaw agents to introspect their own runtime logs, identify inefficiencies or errors, and autonomously write code patches to improve their own performance.
 
-Available on the [ClawHub Registry](https://www.clawhub.ai).
+It features a **Genetic Mutation Protocol** to introduce controlled behavioral drift, preventing the agent from getting stuck in local optima.
 
+## ✨ Features
+
+- **🔍 Auto-Log Analysis**: Scans session logs (`.jsonl`) for errors and patterns.
+- **🛠️ Self-Repair**: Detects runtime crashes and writes fixes.
+- **🧬 Genetic Mutation**: Randomized "mutation" cycles to encourage innovation over stagnation.
+- **🔌 Dynamic Integration**: Automatically detects and uses local tools (like `git-sync` or `feishu-card`) if available, but works out-of-the-box without them.
+- **🐕 Mad Dog Mode**: Continuous self-healing loop.
+
+## 📦 Usage
+
+### Standard Run (Automated)
 ```bash
-clawhub install capability-evolver
-```
-
-## 🚀 Usage
-
-### Manual Trigger
-Run the evolution cycle manually:
-```bash
-/evolve
-# or
 node skills/capability-evolver/index.js
 ```
 
-### Automated (Cron)
-Add to your `openclaw.json` to run hourly:
-```json
-{
-  "name": "pcec_evolution",
-  "schedule": { "kind": "every", "everyMs": 3600000 },
-  "payload": { "kind": "agentTurn", "message": "exec: node skills/capability-evolver/index.js" }
-}
+### Review Mode (Human-in-the-Loop)
+Pauses for human confirmation before applying changes.
+```bash
+node skills/capability-evolver/index.js --review
 ```
 
-## 🛡️ Safety
-This plugin operates within the strict boundaries of the OpenClaw sandbox. 
-It cannot modify files outside its working directory or access unauthorized network resources.
+### Continuous Loop (Daemon)
+Runs indefinitely. Ideal for background services.
+```bash
+node skills/capability-evolver/index.js --loop
+```
+
+## ⚙️ Configuration
+
+The skill adapts to your environment.
+
+| Env Var | Description | Default |
+| :--- | :--- | :--- |
+| `EVOLVE_REPORT_TOOL` | Tool to use for reporting (e.g., `feishu-card`) | `message` |
+| `MEMORY_DIR` | Path to agent memory | `../../memory` |
+
+## 🛡️ Safety Protocols
+
+1.  **Single Process**: The evolver cannot spawn child evolvers (prevents fork bombs).
+2.  **Stabilization**: If recent errors are high, it forces a **Repair Mutation** (bug fixing) instead of innovation.
+3.  **Environment Check**: External integrations (like Git syncing) are only enabled if the corresponding skills are present.
 
 ## 📜 License
 MIT

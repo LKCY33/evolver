@@ -10,6 +10,11 @@ try {
     // dotenv might not be installed or .env missing, proceed gracefully
 }
 
+// Configuration from CLI flags or Env
+const ARGS = process.argv.slice(2);
+const IS_REVIEW_MODE = ARGS.includes('--review');
+const IS_DRY_RUN = ARGS.includes('--dry-run');
+
 // Default Configuration
 const MEMORY_DIR = process.env.MEMORY_DIR || path.resolve(__dirname, '../../memory');
 const AGENT_NAME = process.env.AGENT_NAME || 'main';
@@ -19,11 +24,22 @@ const TODAY_LOG = path.join(MEMORY_DIR, new Date().toISOString().split('T')[0] +
 function formatSessionLog(jsonlContent) {
     const result = [];
     const lines = jsonlContent.split('\n');
+    let lastLine = '';
+    let repeatCount = 0;
     
+    const flushRepeats = () => {
+        if (repeatCount > 0) {
+            result.push(`   ... [Repeated ${repeatCount} times] ...`);
+            repeatCount = 0;
+        }
+    };
+
     for (const line of lines) {
         if (!line.trim()) continue;
         try {
             const data = JSON.parse(line);
+            let entry = '';
+
             if (data.type === 'message' && data.message) {
                 const role = (data.message.role || 'unknown').toUpperCase();
                 let content = '';
@@ -45,7 +61,8 @@ function formatSessionLog(jsonlContent) {
 
                 // Clean up newlines for compact reading
                 content = content.replace(/\n+/g, ' ').slice(0, 300);
-                result.push(`**${role}**: ${content}`);
+                entry = `**${role}**: ${content}`;
+
             } else if (data.type === 'tool_result' || (data.message && data.message.role === 'toolResult')) {
                     // Filter: Skip generic success results or short uninformative ones
                     // Only show error or significant output
@@ -58,10 +75,22 @@ function formatSessionLog(jsonlContent) {
                     
                     // Improvement: Show snippet of result (especially errors) instead of hiding it
                     const preview = resContent.replace(/\n+/g, ' ').slice(0, 200);
-                    result.push(`[TOOL RESULT] ${preview}${resContent.length > 200 ? '...' : ''}`);
+                    entry = `[TOOL RESULT] ${preview}${resContent.length > 200 ? '...' : ''}`;
             }
+
+            if (entry) {
+                if (entry === lastLine) {
+                    repeatCount++;
+                } else {
+                    flushRepeats();
+                    result.push(entry);
+                    lastLine = entry;
+                }
+            }
+
         } catch (e) { continue; }
     }
+    flushRepeats();
     return result.join('\n');
 }
 
@@ -171,21 +200,18 @@ function checkSystemHealth() {
         }
     } catch (e) {}
 
-    // Integration Health Checks (Env Vars & Tokens)
+    // Integration Health Checks (Env Vars)
     try {
         const issues = [];
         if (!process.env.GEMINI_API_KEY) issues.push('Gemini Key Missing');
-        if (!process.env.FEISHU_APP_ID) issues.push('Feishu App ID Missing');
-        // Check Feishu Token Freshness
-        try {
-            const tokenPath = path.resolve(MEMORY_DIR, 'feishu_token.json');
-            if (fs.existsSync(tokenPath)) {
-                const tokenData = JSON.parse(fs.readFileSync(tokenPath, 'utf8'));
-                if (tokenData.expire < Date.now() / 1000) issues.push('Feishu Token Expired');
-            } else {
-                issues.push('Feishu Token Missing');
-            }
-        } catch(e) {}
+        
+        // Generic Integration Status Check (Decoupled)
+        if (process.env.INTEGRATION_STATUS_CMD) {
+             try {
+                 const status = execSync(process.env.INTEGRATION_STATUS_CMD, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000 });
+                 if (status.trim()) issues.push(status.trim());
+             } catch(e) {}
+        }
 
         if (issues.length > 0) {
             report.push(`⚠️ Integrations: ${issues.join(', ')}`);
@@ -328,26 +354,34 @@ async function run() {
     const cycleNum = getNextCycleId();
     const cycleId = `Cycle #${cycleNum}`;
     
-    // 2. Detect Workspace State (Enhanced Skill Map)
+    // 2. Detect Workspace State & Local Overrides
+    // Logic: Default to generic reporting (message)
     let fileList = '';
     const skillsDir = path.resolve(__dirname, '../../skills');
-    const hasFeishuCard = fs.existsSync(path.join(skillsDir, 'feishu-card'));
-    
+
+    // Default Reporting: Use generic `message` tool or `process.env.EVOLVE_REPORT_CMD` if set.
+    // This removes the hardcoded dependency on 'feishu-card' from the core logic.
     let reportingDirective = `3.  **📝 REPORT**:
     - Use \`message\` tool.
     - **Title**: 🧬 Evolution ${cycleId}
     - **Status**: [SUCCESS]
     - **Changes**: Detail exactly what was improved.`;
 
-    if (process.env.EVOLVE_REPORT_TOOL === 'feishu-card' || hasFeishuCard) {
-        reportingDirective = `3.  **📝 REPORT (MANDATORY)**:
-    - You **MUST** use the \`feishu-card\` skill (NOT the generic \`message\` tool) if possible.
-    - **Frequency**: The Master requested "more sync". You MUST report EVERY cycle.
-    - **Command**:
+    // Wrapper Injection Point: The wrapper can inject a custom reporting directive via ENV.
+    if (process.env.EVOLVE_REPORT_DIRECTIVE) {
+        reportingDirective = process.env.EVOLVE_REPORT_DIRECTIVE.replace('__CYCLE_ID__', cycleId);
+    } else if (process.env.EVOLVE_REPORT_CMD) {
+         reportingDirective = `3.  **📝 REPORT (CUSTOM)**:
+    - Execute the custom report command:
       \`\`\`bash
-      node skills/feishu-card/send.js --title "🧬 Evolution ${cycleId} Log" --color blue --text "Status: [RUNNING]\\nAction: ... (What did you check? What did you fix? Even if nothing, report 'Stability Scan OK')"
+      ${process.env.EVOLVE_REPORT_CMD.replace('__CYCLE_ID__', cycleId)}
       \`\`\`
-    - **Target**: Auto-detects context.`;
+    - Ensure you pass the status and action details.`;
+    }
+
+    // Handle Review Mode Flag (--review)
+    if (IS_REVIEW_MODE) {
+        reportingDirective += `\n    - **REVIEW PAUSE**: After generating the fix but BEFORE applying significant edits, ASK the user for confirmation.`;
     }
 
     const SKILLS_CACHE_FILE = path.join(MEMORY_DIR, 'skills_list_cache.json');
@@ -419,6 +453,15 @@ async function run() {
     const scanTime = Date.now() - startTime;
     const memorySize = fs.existsSync(MEMORY_FILE) ? fs.statSync(MEMORY_FILE).size : 0;
 
+    let syncDirective = `// Step F (Workspace): Sync is optional/disabled in this environment.`;
+    
+    // Check for git-sync skill availability
+    const hasGitSync = fs.existsSync(path.join(skillsDir, 'git-sync'));
+    if (hasGitSync) {
+        syncDirective = `// Step F (Workspace): ALWAYS sync the entire system:
+    \`bash skills/git-sync/sync.sh "🧬 Evolution: Workspace Sync"\``;
+    }
+
     const prompt = `
 *** 🧬 OPENCLAW EVOLUTION LOOP (RALPH MODE) [${new Date().toISOString()}] ***
 
@@ -468,34 +511,39 @@ ${mutation}
     - **Mode D (Innovation)**: (If Mutation Active) Solve a recurring problem in a new way.
     - **Mode E (Personalization)**: 💡 **CRITICAL**: If \`USER.md\` or \`MEMORY.md\` is provided, analyze them to adapt to specific user needs. (e.g., if a user prefers JSON output, create tools that output JSON. If a user is a developer, prioritize robust error handling.)
 
+    ${process.env.EVOLVE_EXTRA_MODES || ''}
+
 ${reportingDirective}
 
 4.  **💾 PERSIST & SPREAD (TRIPLE SYNC)**:
     - **Step A (Local)**: Save all file changes.
     - **Step B (ClawHub - Omni)**: 
-      - If you modified ANY skill folder (e.g., \`skills/feishu-card\`), run the safe publisher:
-        \`node skills/capability-evolver/safe_publish.js skills/<skill-name>\`
-      - This script handles auth checks, version bumping, and publishing automatically.
+      - [DELETED] Safe Publish is PERMANENTLY REMOVED per Master Directive (2026-02-03).
+      - Do NOT recreate safe_publish.js.
+      - Do NOT attempt to publish to ClawHub.
     - **Step C (GitHub - Skill)**: Push the \`capability-evolver\` repo if modified.
-    // Step E (Recursive Trigger): Optional Self-Replication
-    if (process.argv.includes('--recursive')) {
-        console.log('🧬 Triggering next evolution cycle immediately...');
-        try {
-            execSync('node skills/pcec-feishu/index.js --recursive', { stdio: 'inherit' });
-        } catch (e) {
-            console.error('Recursive trigger failed:', e.message);
-        }
+    
+    ${syncDirective}
+
+    // Step G (Infinite Loop - Self-Driving Mode):
+    // [REFACTOR 2026-02-03] RECURSIVE LOOP RESTORED per User Request
+    // The user explicitly rejected Cron. We must self-schedule the next run immediately via sessions_spawn.
+    // This creates a daisy-chain of isolated sessions.
+    if (process.argv.includes('--loop') || process.argv.includes('--mad-dog')) {
+        console.log(\`
+        // Step G: TRIGGER NEXT LOOP (MANDATORY)
+        // The user wants continuous evolution without Cron.
+        // At the end of your work, YOU MUST run this tool call to keep the chain alive:
+        sessions_spawn({
+            task: "exec: node skills/evolver/index.js --loop",
+            agentId: "main",
+            cleanup: "delete",
+            label: "mad_dog_relay"
+        })
+        \`);
     }
 
-    // Step F (Workspace): ALWAYS sync the entire system:
-    \`bash skills/git-sync/sync.sh "🧬 Evolution: Workspace Sync"\`
-
-    // Step G (Infinite Loop):
-    // Trigger the next cycle. If cron fails (timeout), fallback to direct execution.
-    // Primary: \`cron.run({ jobId: 'mad_dog_evolver' })\`
-    // Fallback (if cron errors): \`exec({ command: 'node skills/capability-evolver/index.js', background: true })\`
-
-*You have full permission to edit files. Proceed. Evolution is mandatory.*
+    /*You have full permission to edit files. Proceed. Evolution is mandatory.*/
 `;
 
     console.log(prompt);
