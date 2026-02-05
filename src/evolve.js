@@ -8,6 +8,7 @@ const { loadGenes, loadCapsules, getLastEventId, appendCandidateJsonl, readRecen
 const { selectGeneAndCapsule } = require('./gep/selector');
 const { buildGepPrompt } = require('./gep/prompt');
 const { extractCapabilityCandidates, renderCandidatesPreview } = require('./gep/candidates');
+const { getMemoryAdvice, recordAttempt, recordOutcomeFromState, memoryGraphPath } = require('./gep/memoryGraph');
 
 const REPO_ROOT = getRepoRoot();
 
@@ -22,6 +23,7 @@ try {
 const ARGS = process.argv.slice(2);
 const IS_REVIEW_MODE = ARGS.includes('--review');
 const IS_DRY_RUN = ARGS.includes('--dry-run');
+const IS_RANDOM_DRIFT = ARGS.includes('--drift') || String(process.env.RANDOM_DRIFT || '').toLowerCase() === 'true';
 
 // Default Configuration
 const MEMORY_DIR = getMemoryDir();
@@ -510,6 +512,16 @@ async function run() {
     userSnippet,
   });
 
+  // Memory Graph: close last action with an inferred outcome (append-only graph, mutable state).
+  try {
+    recordOutcomeFromState({ signals });
+  } catch (e) {
+    // If we can't read/write memory graph, refuse to evolve (no "memoryless evolution").
+    console.error(`[MemoryGraph] Outcome write failed: ${e.message}`);
+    console.error(`[MemoryGraph] Refusing to evolve without causal memory. Target: ${memoryGraphPath()}`);
+    process.exit(2);
+  }
+
   // Capability candidates (structured, short): persist and preview.
   const newCandidates = extractCapabilityCandidates({
     recentSessionTranscript: recentMasterLog,
@@ -523,11 +535,38 @@ async function run() {
   const recentCandidates = readRecentCandidates(20);
   const capabilityCandidatesPreview = renderCandidatesPreview(recentCandidates.slice(-8), 1600);
 
+  // Memory Graph reasoning: prefer high-confidence paths, suppress known low-success paths (unless drift is explicit).
+  let memoryAdvice = null;
+  try {
+    memoryAdvice = getMemoryAdvice({ signals, genes, driftEnabled: IS_RANDOM_DRIFT });
+  } catch (e) {
+    console.error(`[MemoryGraph] Read failed: ${e.message}`);
+    console.error(`[MemoryGraph] Refusing to evolve without causal memory. Target: ${memoryGraphPath()}`);
+    process.exit(2);
+  }
+
   const { selectedGene, capsuleCandidates, selector } = selectGeneAndCapsule({
     genes,
     capsules,
     signals,
+    memoryAdvice,
+    driftEnabled: IS_RANDOM_DRIFT,
   });
+
+  // Memory Graph: record the chosen causal path for this run. If this fails, refuse to output a mutation prompt.
+  try {
+    recordAttempt({
+      signals,
+      selectedGene,
+      selector,
+      driftEnabled: IS_RANDOM_DRIFT,
+      selectedBy: memoryAdvice && memoryAdvice.preferredGeneId ? 'memory_graph+selector' : 'selector',
+    });
+  } catch (e) {
+    console.error(`[MemoryGraph] Attempt write failed: ${e.message}`);
+    console.error(`[MemoryGraph] Refusing to evolve without causal memory. Target: ${memoryGraphPath()}`);
+    process.exit(2);
+  }
 
   const genesPreview = `\`\`\`json\n${JSON.stringify(genes.slice(0, 6), null, 2)}\n\`\`\``;
   const capsulesPreview = `\`\`\`json\n${JSON.stringify(capsules.slice(-3), null, 2)}\n\`\`\``;

@@ -31,16 +31,38 @@ function scoreGene(gene, signals) {
   return score;
 }
 
-function selectGene(genes, signals) {
+function selectGene(genes, signals, opts) {
+  const bannedGeneIds = opts && opts.bannedGeneIds ? opts.bannedGeneIds : new Set();
+  const driftEnabled = !!(opts && opts.driftEnabled);
+  const preferredGeneId = opts && typeof opts.preferredGeneId === 'string' ? opts.preferredGeneId : null;
+
   const scored = genes
     .map(g => ({ gene: g, score: scoreGene(g, signals) }))
     .filter(x => x.score > 0)
     .sort((a, b) => b.score - a.score);
 
   if (scored.length === 0) return { selected: null, alternatives: [] };
+
+  // Memory graph preference: only override when the preferred gene is already a match candidate.
+  if (preferredGeneId) {
+    const preferred = scored.find(x => x.gene && x.gene.id === preferredGeneId);
+    if (preferred && (driftEnabled || !bannedGeneIds.has(preferredGeneId))) {
+      const rest = scored.filter(x => x.gene && x.gene.id !== preferredGeneId);
+      const filteredRest = driftEnabled ? rest : rest.filter(x => x.gene && !bannedGeneIds.has(x.gene.id));
+      return {
+        selected: preferred.gene,
+        alternatives: filteredRest.slice(0, 4).map(x => x.gene),
+      };
+    }
+  }
+
+  // Low-efficiency suppression: do not repeat low-confidence paths unless drift is explicit.
+  const filtered = driftEnabled ? scored : scored.filter(x => x.gene && !bannedGeneIds.has(x.gene.id));
+  if (filtered.length === 0) return { selected: null, alternatives: scored.slice(0, 4).map(x => x.gene) };
+
   return {
-    selected: scored[0].gene,
-    alternatives: scored.slice(1, 4).map(x => x.gene),
+    selected: filtered[0].gene,
+    alternatives: filtered.slice(1, 4).map(x => x.gene),
   };
 }
 
@@ -56,10 +78,25 @@ function selectCapsule(capsules, signals) {
   return scored.length ? scored[0].capsule : null;
 }
 
-function selectGeneAndCapsule({ genes, capsules, signals }) {
-  const { selected, alternatives } = selectGene(genes, signals);
+function selectGeneAndCapsule({ genes, capsules, signals, memoryAdvice, driftEnabled }) {
+  const bannedGeneIds =
+    memoryAdvice && memoryAdvice.bannedGeneIds instanceof Set ? memoryAdvice.bannedGeneIds : new Set();
+  const preferredGeneId = memoryAdvice && memoryAdvice.preferredGeneId ? memoryAdvice.preferredGeneId : null;
+
+  const { selected, alternatives } = selectGene(genes, signals, {
+    bannedGeneIds,
+    preferredGeneId,
+    driftEnabled: !!driftEnabled,
+  });
   const capsule = selectCapsule(capsules, signals);
-  const selector = buildSelectorDecision({ gene: selected, capsule, signals, alternatives });
+  const selector = buildSelectorDecision({
+    gene: selected,
+    capsule,
+    signals,
+    alternatives,
+    memoryAdvice,
+    driftEnabled,
+  });
   return {
     selectedGene: selected,
     capsuleCandidates: capsule ? [capsule] : [],
@@ -67,12 +104,20 @@ function selectGeneAndCapsule({ genes, capsules, signals }) {
   };
 }
 
-function buildSelectorDecision({ gene, capsule, signals, alternatives }) {
+function buildSelectorDecision({ gene, capsule, signals, alternatives, memoryAdvice, driftEnabled }) {
   const reason = [];
   if (gene) reason.push('signals match gene.signals_match');
   if (capsule) reason.push('capsule trigger matches signals');
   if (!gene) reason.push('no matching gene found; new gene may be required');
   if (signals && signals.length) reason.push(`signals: ${signals.join(', ')}`);
+
+  if (memoryAdvice && Array.isArray(memoryAdvice.explanation) && memoryAdvice.explanation.length) {
+    reason.push(`memory_graph: ${memoryAdvice.explanation.join(' | ')}`);
+  }
+  if (driftEnabled) {
+    reason.push('random_drift_override: true');
+  }
+
   return {
     selected: gene ? gene.id : null,
     reason,
