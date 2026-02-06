@@ -120,8 +120,15 @@ function countFileLines(absPath) {
   }
 }
 
-function computeBlastRadius({ repoRoot }) {
-  const changedFiles = gitListChangedFiles({ repoRoot });
+function computeBlastRadius({ repoRoot, baselineUntracked }) {
+  let changedFiles = gitListChangedFiles({ repoRoot });
+
+  // Exclude files that were already untracked in the baseline.
+  // This prevents counting existing untracked files as "changed".
+  if (Array.isArray(baselineUntracked) && baselineUntracked.length > 0) {
+    const baselineSet = new Set(baselineUntracked);
+    changedFiles = changedFiles.filter(f => !baselineSet.has(f));
+  }
   const filesCount = changedFiles.length;
 
   const u = tryRunCmd('git diff --numstat', { cwd: repoRoot, timeoutMs: 60000 });
@@ -134,7 +141,9 @@ function computeBlastRadius({ repoRoot }) {
   let untrackedLines = 0;
   if (untracked.ok) {
     const rels = String(untracked.out).split('\n').map(l => l.trim()).filter(Boolean);
+    const baselineSet = new Set(Array.isArray(baselineUntracked) ? baselineUntracked : []);
     for (const rel of rels) {
+      if (baselineSet.has(rel)) continue;
       const abs = path.join(repoRoot, rel);
       untrackedLines += countFileLines(abs);
     }
@@ -382,7 +391,10 @@ function solidify({ intent, summary, dryRun = false, rollbackOnFailure = true } 
   const ensured = ensureGene({ genes, selectedGene, signals, intent, dryRun: !!dryRun });
   const geneUsed = ensured.gene;
 
-  const blast = computeBlastRadius({ repoRoot });
+  const blast = computeBlastRadius({
+    repoRoot,
+    baselineUntracked: lastRun && Array.isArray(lastRun.baseline_untracked) ? lastRun.baseline_untracked : [],
+  });
   const constraintCheck = checkConstraints({ gene: geneUsed, blast });
 
   let validation = { ok: true, results: [] };

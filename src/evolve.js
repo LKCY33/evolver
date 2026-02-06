@@ -33,7 +33,7 @@ const REPO_ROOT = getRepoRoot();
 
 // Load environment variables from repo root
 try {
-  require('dotenv').config({ path: path.join(REPO_ROOT, '.env') });
+  require('dotenv').config({ path: path.join(REPO_ROOT, '.env'), quiet: true });
 } catch (e) {
   // dotenv might not be installed or .env missing, proceed gracefully
 }
@@ -397,9 +397,11 @@ async function run() {
       if (lastRun && lastRun.run_id) {
         const pending = !lastSolid || !lastSolid.run_id || String(lastSolid.run_id) !== String(lastRun.run_id);
         if (pending) {
-          console.log(`[BRIDGE WAIT] Previous run pending solidify: ${String(lastRun.run_id)}. Waiting...`);
           // Backoff to avoid tight loops and disk churn.
-          await sleepMs(3000);
+          const raw = process.env.EVOLVE_PENDING_SLEEP_MS || process.env.EVOLVE_MIN_INTERVAL || '120000';
+          const n = parseInt(String(raw), 10);
+          const waitMs = Number.isFinite(n) ? Math.max(0, n) : 120000;
+          await sleepMs(waitMs);
           return;
         }
       }
@@ -737,8 +739,13 @@ async function run() {
     Number(personalityState.creativity) >= 0.75 &&
     stableSuccess &&
     tailAvgScore >= 0.7;
-  const mutationInnovateMode = !!IS_RANDOM_DRIFT || !!innovationPressure;
+  const forceInnovation =
+    String(process.env.FORCE_INNOVATION || process.env.EVOLVE_FORCE_INNOVATION || '').toLowerCase() === 'true';
+  const mutationInnovateMode = !!IS_RANDOM_DRIFT || !!innovationPressure || !!forceInnovation;
   const mutationSignals = innovationPressure ? [...(Array.isArray(signals) ? signals : []), 'stable_success_plateau'] : signals;
+  const mutationSignalsEffective = forceInnovation
+    ? [...(Array.isArray(mutationSignals) ? mutationSignals : []), 'force_innovation']
+    : mutationSignals;
 
   const allowHighRisk =
     !!IS_RANDOM_DRIFT &&
@@ -750,7 +757,7 @@ async function run() {
     Number(personalityState.risk_tolerance) <= 0.3 &&
     !(Array.isArray(signals) && signals.includes('log_error'));
   const mutation = buildMutation({
-    signals: mutationSignals,
+    signals: mutationSignalsEffective,
     selectedGene,
     driftEnabled: mutationInnovateMode,
     personalityState,
@@ -766,7 +773,7 @@ async function run() {
       personality_state: personalityState,
       selectedGene,
       selector,
-      driftEnabled: IS_RANDOM_DRIFT,
+      driftEnabled: mutationInnovateMode,
       selectedBy,
       capsulesUsed,
       observations,
@@ -786,7 +793,7 @@ async function run() {
       personality_state: personalityState,
       selectedGene,
       selector,
-      driftEnabled: IS_RANDOM_DRIFT,
+      driftEnabled: mutationInnovateMode,
       selectedBy,
       hypothesisId,
       capsulesUsed,
@@ -931,6 +938,22 @@ ${mutationDirective}
     capabilityCandidatesPreview,
     externalCandidatesPreview,
   });
+
+  // Optional: emit a compact thought process block for wrappers (noise-controlled).
+  const emitThought = String(process.env.EVOLVE_EMIT_THOUGHT_PROCESS || '').toLowerCase() === 'true';
+  if (emitThought) {
+    const s = Array.isArray(signals) ? signals : [];
+    const thought = [
+      `cycle_id: ${cycleId}`,
+      `signals_count: ${s.length}`,
+      `signals: ${s.slice(0, 12).join(', ')}${s.length > 12 ? ' ...' : ''}`,
+      `selected_gene: ${selectedGene && selectedGene.id ? String(selectedGene.id) : '(none)'}`,
+      `selected_capsule: ${selectedCapsuleId ? String(selectedCapsuleId) : '(none)'}`,
+      `mutation_category: ${mutation && mutation.category ? String(mutation.category) : '(none)'}`,
+      `force_innovation: ${forceInnovation ? 'true' : 'false'}`,
+    ].join('\n');
+    console.log(`[THOUGHT_PROCESS]\n${thought}\n[/THOUGHT_PROCESS]`);
+  }
 
   const printPrompt = String(process.env.EVOLVE_PRINT_PROMPT || '').toLowerCase() === 'true';
 
