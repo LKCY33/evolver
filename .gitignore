@@ -5,3 +5,7 @@ assets/gep/candidates.jsonl
 assets/gep/external_candidates.jsonl
 dist-public/
 
+# Docker / vibe testing
+test/tmp/
+.docker-test-state/
+

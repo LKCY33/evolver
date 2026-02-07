@@ -137,6 +137,12 @@ MAJOR.MINOR.PATCH
 
 ## Changelog
 
+### v1.5.1
+- Add containerized vibe testing framework (Docker + node:22-bookworm, OpenClaw-compatible environment).
+- 7 end-to-end tests: module load, dry-run solidify, schema compliance, A2A round-trip, full evolve+solidify, loop gating, env fingerprint.
+- Add internal daemon loop with suicide guard for memory leak protection.
+- One-command test: `npm run test:vibe`.
+
 ### v1.5.0
 - Add content-addressable asset IDs (SHA-256 canonical hashing) for deduplication, tamper detection, and cross-node consistency.
 - Add environment fingerprint capture (node version, platform, arch, evolver version) embedded in EvolutionEvents, Capsules, and ValidationReports.

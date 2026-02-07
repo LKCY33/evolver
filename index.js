@@ -1,6 +1,39 @@
 const evolve = require('./src/evolve');
 const { solidify } = require('./src/gep/solidify');
 const path = require('path');
+const fs = require('fs');
+const { spawn } = require('child_process');
+
+function sleepMs(ms) {
+  const n = parseInt(String(ms), 10);
+  const t = Number.isFinite(n) ? Math.max(0, n) : 0;
+  return new Promise(resolve => setTimeout(resolve, t));
+}
+
+function readJsonSafe(p) {
+  try {
+    if (!fs.existsSync(p)) return null;
+    const raw = fs.readFileSync(p, 'utf8');
+    if (!raw.trim()) return null;
+    return JSON.parse(raw);
+  } catch (e) {
+    return null;
+  }
+}
+
+function isPendingSolidify(state) {
+  const lastRun = state && state.last_run ? state.last_run : null;
+  const lastSolid = state && state.last_solidify ? state.last_solidify : null;
+  if (!lastRun || !lastRun.run_id) return false;
+  if (!lastSolid || !lastSolid.run_id) return true;
+  return String(lastSolid.run_id) !== String(lastRun.run_id);
+}
+
+function parseMs(v, fallback) {
+  const n = parseInt(String(v == null ? '' : v), 10);
+  if (Number.isFinite(n)) return Math.max(0, n);
+  return fallback;
+}
 
 async function main() {
   const args = process.argv.slice(2);
@@ -11,41 +44,76 @@ async function main() {
     console.log('Starting capability evolver...');
     
     if (isLoop) {
-        // Signal evolve.js to enable loop gating/chain behavior.
+        // Internal daemon loop (no wrapper required).
         process.env.EVOLVE_LOOP = 'true';
-        console.log('Loop mode enabled (relay).');
-        // [RELAY MODE RESTORED 2026-02-03]
-        // Run once, then let evolve.js trigger the next agent via sessions_spawn.
-        try {
+        process.env.EVOLVE_BRIDGE = 'false';
+        console.log('Loop mode enabled (internal daemon).');
+
+        const solidifyStatePath = path.join(__dirname, 'memory', 'evolution_solidify_state.json');
+
+        const minSleepMs = parseMs(process.env.EVOLVER_MIN_SLEEP_MS, 2000);
+        const maxSleepMs = parseMs(process.env.EVOLVER_MAX_SLEEP_MS, 300000);
+        const idleThresholdMs = parseMs(process.env.EVOLVER_IDLE_THRESHOLD_MS, 500);
+        const pendingSleepMs = parseMs(
+          process.env.EVOLVE_PENDING_SLEEP_MS ||
+            process.env.EVOLVE_MIN_INTERVAL ||
+            process.env.FEISHU_EVOLVER_INTERVAL,
+          120000
+        );
+
+        const maxCyclesPerProcess = parseMs(process.env.EVOLVER_MAX_CYCLES_PER_PROCESS, 100) || 100;
+        const maxRssMb = parseMs(process.env.EVOLVER_MAX_RSS_MB, 500) || 500;
+        const suicideEnabled = String(process.env.EVOLVER_SUICIDE || '').toLowerCase() !== 'false';
+
+        let currentSleepMs = Math.min(maxSleepMs, Math.max(minSleepMs, minSleepMs));
+        let cycleCount = 0;
+
+        while (true) {
+          cycleCount += 1;
+
+          // Ralph-loop gating: do not run a new cycle while previous run is pending solidify.
+          const st0 = readJsonSafe(solidifyStatePath);
+          if (isPendingSolidify(st0)) {
+            await sleepMs(Math.max(pendingSleepMs, minSleepMs));
+            continue;
+          }
+
+          const t0 = Date.now();
+          let ok = false;
+          try {
             await evolve.run();
-        } catch (error) {
-            console.error('Evolution failed:', error);
-            
-            // [HARDENING] Fail-Safe Recovery
-            // If evolution crashes, we must output a recovery command so the agent spawns the next loop.
-            // We add a delay to prevent rapid crash loops.
-            let recoverRel = 'skills/evolver/scripts/recover_loop.js';
-            try {
-              // In most installs, __dirname is .../workspace/skills/<skillName>
-              const workspaceRoot = path.resolve(__dirname, '..', '..');
-              const absRecover = path.join(__dirname, 'scripts', 'recover_loop.js');
-              const rel = path.relative(workspaceRoot, absRecover);
-              if (rel && !rel.startsWith('..') && !path.isAbsolute(rel)) {
-                recoverRel = rel.split(path.sep).join('/');
-              }
-            } catch (e) {}
-            console.log(`
-            // [RECOVERY MODE] Evolution Logic Crashed.
-            // Spawning next loop via safe recovery script.
-            sessions_spawn({
-                task: "exec: node ${recoverRel}",
-                agentId: "main",
-                cleanup: "delete",
-                label: "mad_dog_recovery"
-            })
-            `);
-            
-            process.exit(1);
+            ok = true;
+          } catch (error) {
+            const msg = error && error.message ? String(error.message) : String(error);
+            console.error(`Evolution cycle failed: ${msg}`);
+          }
+          const dt = Date.now() - t0;
+
+          // Adaptive sleep: treat very fast cycles as "idle", backoff; otherwise reset to min.
+          if (!ok || dt < idleThresholdMs) {
+            currentSleepMs = Math.min(maxSleepMs, Math.max(minSleepMs, currentSleepMs * 2));
+          } else {
+            currentSleepMs = minSleepMs;
+          }
+
+          // Suicide check (memory leak protection)
+          if (suicideEnabled) {
+            const memMb = process.memoryUsage().rss / 1024 / 1024;
+            if (cycleCount >= maxCyclesPerProcess || memMb > maxRssMb) {
+              console.log(`[Daemon] Restarting self (cycles=${cycleCount}, rssMb=${memMb.toFixed(0)})`);
+              const child = spawn(process.execPath, [__filename, ...args], {
+                detached: true,
+                stdio: 'ignore',
+                env: process.env,
+              });
+              child.unref();
+              process.exit(0);
+            }
+          }
+
+          // Jitter to avoid lockstep restarts.
+          const jitter = Math.floor(Math.random() * 250);
+          await sleepMs(currentSleepMs + jitter);
         }
     } else {
         // Normal Single Run
