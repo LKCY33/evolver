@@ -85,21 +85,6 @@ function gitListChangedFiles({ repoRoot }) {
   return Array.from(files);
 }
 
-function gitListTrackedChangedFiles(repoRoot) {
-  const r = tryRunCmd('git status --porcelain --untracked-files=no', { cwd: repoRoot, timeoutMs: 60000 });
-  if (!r.ok) return [];
-  const files = new Set();
-  const lines = String(r.out).split('\n').map(l => l.trim()).filter(Boolean);
-  for (const line of lines) {
-    const p = line.slice(3).trim();
-    if (!p) continue;
-    const arrow = p.lastIndexOf('->');
-    const rel = (arrow >= 0 ? p.slice(arrow + 2) : p).trim();
-    if (rel) files.add(rel);
-  }
-  return Array.from(files);
-}
-
 function parseNumstat(text) {
   const lines = String(text || '').split('\n').map(l => l.trim()).filter(Boolean);
   let added = 0;
@@ -241,13 +226,9 @@ function runValidations(gene, opts = {}) {
   return { ok: true, results, startedAt, finishedAt: Date.now() };
 }
 
-function rollbackTracked(repoRoot, baselineTracked) {
-  const baseline = new Set((Array.isArray(baselineTracked) ? baselineTracked : []).map(String));
-  const current = gitListTrackedChangedFiles(repoRoot);
-  const toRestore = current.filter(f => !baseline.has(String(f)));
-  if (toRestore.length === 0) return;
-  const paths = toRestore.map(p => `"${String(p).replace(/"/g, '\\"')}"`);
-  tryRunCmd(`git restore --staged --worktree -- ${paths.join(' ')}`, { cwd: repoRoot, timeoutMs: 60000 });
+function rollbackTracked(repoRoot) {
+  tryRunCmd('git restore --staged --worktree .', { cwd: repoRoot, timeoutMs: 60000 });
+  tryRunCmd('git reset --hard', { cwd: repoRoot, timeoutMs: 60000 });
 }
 
 function gitListUntrackedFiles(repoRoot) {
@@ -487,7 +468,7 @@ function solidify({ intent, summary, dryRun = false, rollbackOnFailure = true } 
 
   // Bug fix: dry-run must NOT trigger rollback (it should only observe, not mutate).
   if (!dryRun && !success && rollbackOnFailure) {
-    rollbackTracked(repoRoot, lastRun && Array.isArray(lastRun.baseline_tracked) ? lastRun.baseline_tracked : []);
+    rollbackTracked(repoRoot);
     rollbackNewUntrackedFiles({ repoRoot, baselineUntracked: lastRun && lastRun.baseline_untracked ? lastRun.baseline_untracked : [] });
   }
 

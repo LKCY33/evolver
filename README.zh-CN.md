@@ -70,7 +70,7 @@ node index.js --loop
 
 ## Public 发布
 
-本仓库作为 public 仓库的私有维护区。
+本仓库为公开发行版本。
 
 - 构建公开产物：`npm run build`
 - 发布公开产物：`npm run publish:public`
