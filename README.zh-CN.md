@@ -134,6 +134,11 @@ MAJOR.MINOR.PATCH
 
 ## 更新日志
 
+### v1.10.3
+- **可配置约束口径 (Configurable Blast Radius Policy)**：`computeBlastRadius()` 将运行产物（日志、memory、capsule、events）与功能代码分离。仅代码/配置文件计入 `max_files` 约束。策略可通过 `openclaw.json` 的 `evolver.constraints.countedFilePolicy` 配置。
+- **结构化状态产出 (Structured Status Output)**：`solidify()` 生成结构化状态载荷（`result`、`en`、`zh`、`meta`），并写入周期状态文件，为下游报告提供丰富的进化上下文（intent、gene、signals、blast radius、validation 结果）。
+- **Solidify CLI 可观测性**：`index.js solidify` 执行后输出 `[SOLIDIFY_STATUS]` 和 `[SOLIDIFY_STATUS_FILE]`，便于 wrapper 集成。
+
 ### v1.10.1
 - **创新冷却 (Innovation Cooldown)**：在 `analyzeRecentHistory()` 中追踪近期创新目标，并在 GEP 提示词中注入 `Context [Innovation Cooldown]` 段，防止 Hand Agent 在连续周期中反复对同一技能/模块进行创新。
 - **信号增强**：`analyzeRecentHistory()` 新增 `recentInnovationTargets` 返回值（目标路径到最近 10 轮出现次数的映射）。

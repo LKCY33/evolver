@@ -1,6 +1,7 @@
 const { loadGenes, loadCapsules, readAllEvents } = require('../src/gep/assetStore');
-const { exportEligibleCapsules } = require('../src/gep/a2a');
+const { exportEligibleCapsules, exportEligibleGenes, isAllowedA2AAsset } = require('../src/gep/a2a');
 const { buildPublish, buildHello, getTransport } = require('../src/gep/a2aProtocol');
+const { computeAssetId, SCHEMA_VERSION } = require('../src/gep/contentHash');
 
 function main() {
   var args = process.argv.slice(2);
@@ -8,13 +9,30 @@ function main() {
   var asProtocol = args.includes('--protocol');
   var withHello = args.includes('--hello');
   var persist = args.includes('--persist');
+  var includeEvents = args.includes('--include-events');
 
   var capsules = loadCapsules();
+  var genes = loadGenes();
   var events = readAllEvents();
-  var eligible = exportEligibleCapsules({ capsules: capsules, events: events });
+
+  // Build eligible list: Capsules (filtered) + Genes (filtered) + Events (opt-in)
+  var eligibleCapsules = exportEligibleCapsules({ capsules: capsules, events: events });
+  var eligibleGenes = exportEligibleGenes({ genes: genes });
+  var eligible = eligibleCapsules.concat(eligibleGenes);
+
+  if (includeEvents) {
+    var eligibleEvents = (Array.isArray(events) ? events : []).filter(function (e) {
+      return isAllowedA2AAsset(e) && e.type === 'EvolutionEvent';
+    });
+    for (var ei = 0; ei < eligibleEvents.length; ei++) {
+      var ev = eligibleEvents[ei];
+      if (!ev.schema_version) ev.schema_version = SCHEMA_VERSION;
+      if (!ev.asset_id) { try { ev.asset_id = computeAssetId(ev); } catch (e) {} }
+    }
+    eligible = eligible.concat(eligibleEvents);
+  }
 
   if (withHello || asProtocol) {
-    var genes = loadGenes();
     var hello = buildHello({ geneCount: genes.length, capsuleCount: capsules.length });
     process.stdout.write(JSON.stringify(hello) + '\n');
     if (persist) { try { getTransport().send(hello); } catch (e) {} }

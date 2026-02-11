@@ -156,6 +156,11 @@ MAJOR.MINOR.PATCH
 
 ## Changelog
 
+### v1.10.3
+- **Configurable Blast Radius Policy**: `computeBlastRadius()` now separates runtime artifacts (logs, memory, capsules, events) from functional code. Only code/config files count toward `max_files` constraints. Policy is configurable via `openclaw.json` at `evolver.constraints.countedFilePolicy`.
+- **Structured Status Output**: `solidify()` now generates a structured status payload (`result`, `en`, `zh`, `meta`) and writes it to a cycle status file, providing downstream reporters with rich evolution context (intent, gene, signals, blast radius, validation results).
+- **Solidify CLI Observability**: `index.js solidify` prints `[SOLIDIFY_STATUS]` and `[SOLIDIFY_STATUS_FILE]` lines for wrapper integration.
+
 ### v1.10.1
 - **Innovation Cooldown**: Track recent innovation targets in `analyzeRecentHistory()` and inject `Context [Innovation Cooldown]` into GEP prompt, preventing the Hand Agent from repeatedly innovating on the same skill/module across consecutive cycles.
 - **Signal Enhancement**: `analyzeRecentHistory()` now returns `recentInnovationTargets` (map of target path to count in last 10 events).

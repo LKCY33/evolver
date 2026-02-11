@@ -5,9 +5,17 @@ function getRepoRoot() {
   return path.resolve(__dirname, '..', '..');
 }
 
+function getWorkspaceRoot() {
+  // skills/evolver -> workspace root
+  return path.resolve(getRepoRoot(), '..', '..');
+}
+
+function getLogsDir() {
+  return process.env.EVOLVER_LOGS_DIR || path.join(getWorkspaceRoot(), 'logs');
+}
+
 function getMemoryDir() {
-  const repoRoot = getRepoRoot();
-  return process.env.MEMORY_DIR || path.join(repoRoot, 'memory');
+  return process.env.MEMORY_DIR || path.join(getWorkspaceRoot(), 'memory');
 }
 
 function getEvolutionDir() {
@@ -19,29 +27,17 @@ function getGepAssetsDir() {
   return process.env.GEP_ASSETS_DIR || path.join(repoRoot, 'assets', 'gep');
 }
 
-function getWorkspaceRoot() {
-  // evolver repo root is skills/evolver/, workspace is two levels up
-  return process.env.OPENCLAW_WORKSPACE || path.resolve(getRepoRoot(), '..', '..');
-}
-
 function getSkillsDir() {
-  return path.join(getWorkspaceRoot(), 'skills');
-}
-
-function getLogsDir() {
-  var dir = path.join(getWorkspaceRoot(), 'logs');
-  var fs = require('fs');
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  return dir;
+  return process.env.SKILLS_DIR || path.join(getWorkspaceRoot(), 'skills');
 }
 
 module.exports = {
   getRepoRoot,
+  getWorkspaceRoot,
+  getLogsDir,
   getMemoryDir,
   getEvolutionDir,
   getGepAssetsDir,
-  getWorkspaceRoot,
   getSkillsDir,
-  getLogsDir,
 };
 

@@ -112,6 +112,26 @@ function exportEligibleCapsules(params) {
   return eligible;
 }
 
+function isGeneBroadcastEligible(gene) {
+  if (!gene || gene.type !== 'Gene') return false;
+  if (!gene.id || typeof gene.id !== 'string') return false;
+  if (!Array.isArray(gene.strategy) || gene.strategy.length === 0) return false;
+  if (!Array.isArray(gene.validation) || gene.validation.length === 0) return false;
+  return true;
+}
+
+function exportEligibleGenes(params) {
+  if (!params) params = {};
+  var list = Array.isArray(params.genes) ? params.genes : [];
+  var eligible = list.filter(function (g) { return isGeneBroadcastEligible(g); });
+  for (var i = 0; i < eligible.length; i++) {
+    var g = eligible[i];
+    if (!g.schema_version) g.schema_version = SCHEMA_VERSION;
+    if (!g.asset_id) { try { g.asset_id = computeAssetId(g); } catch (e) {} }
+  }
+  return eligible;
+}
+
 function parseA2AInput(text) {
   var raw = String(text || '').trim();
   if (!raw) return [];
@@ -148,5 +168,6 @@ function readTextIfExists(filePath) {
 module.exports = {
   isAllowedA2AAsset, lowerConfidence, isBlastRadiusSafe,
   computeCapsuleSuccessStreak, isCapsuleBroadcastEligible,
-  exportEligibleCapsules, parseA2AInput, readTextIfExists,
+  exportEligibleCapsules, isGeneBroadcastEligible,
+  exportEligibleGenes, parseA2AInput, readTextIfExists,
 };

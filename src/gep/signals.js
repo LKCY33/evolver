@@ -1,5 +1,3 @@
-var { resolveStrategy } = require('./strategy');
-
 // Opportunity signal names (shared with mutation.js and personality.js).
 var OPPORTUNITY_SIGNALS = [
   'user_feature_request',
@@ -72,24 +70,7 @@ function analyzeRecentHistory(recentEvents) {
 
   var recentIntents = recent.map(function(e) { return e.intent || 'unknown'; });
 
-  // Track recent innovation targets to prevent repeated work on the same skill/module
-  var recentInnovationTargets = {};
-  for (var ti = 0; ti < recent.length; ti++) {
-    var tevt = recent[ti];
-    if (tevt.intent === 'innovate' && tevt.mutation_id) {
-      var tgt = (tevt.mutation && tevt.mutation.target) || '';
-      if (!tgt) {
-        var sum = String(tevt.summary || tevt.capsule_summary || '');
-        var skillMatch = sum.match(/skills\/([a-zA-Z0-9_-]+)/);
-        if (skillMatch) tgt = 'skills/' + skillMatch[1];
-      }
-      if (tgt) {
-        recentInnovationTargets[tgt] = (recentInnovationTargets[tgt] || 0) + 1;
-      }
-    }
-  }
-
-  return { suppressedSignals: suppressedSignals, recentIntents: recentIntents, consecutiveRepairCount: consecutiveRepairCount, signalFreq: signalFreq, geneFreq: geneFreq, recentInnovationTargets: recentInnovationTargets };
+  return { suppressedSignals: suppressedSignals, recentIntents: recentIntents, consecutiveRepairCount: consecutiveRepairCount, signalFreq: signalFreq, geneFreq: geneFreq };
 }
 
 function extractSignals({ recentSessionTranscript, todayLog, memorySnippet, userSnippet, recentEvents }) {
@@ -131,8 +112,8 @@ function extractSignals({ recentSessionTranscript, todayLog, memorySnippet, user
   if (lower.includes('user.md missing')) signals.push('user_missing');
   if (lower.includes('key missing')) signals.push('integration_key_missing');
   if (lower.includes('no session logs found') || lower.includes('no jsonl files')) signals.push('session_logs_missing');
-  if (lower.includes('pgrep') || lower.includes('ps aux')) signals.push('windows_shell_incompatible');
-  if (lower.includes('path.resolve(__dirname, \'../../')) signals.push('path_outside_workspace');
+  // if (lower.includes('pgrep') || lower.includes('ps aux')) signals.push('windows_shell_incompatible');
+  if (lower.includes('path.resolve(__dirname, \'../../../')) signals.push('path_outside_workspace');
 
   // Protocol-specific drift signals
   if (lower.includes('prompt') && !lower.includes('evolutionevent')) signals.push('protocol_drift');
@@ -192,18 +173,19 @@ function extractSignals({ recentSessionTranscript, todayLog, memorySnippet, user
     }
   }
 
-  // --- Tool Usage Analytics (auto-evolved) ---
-  // Detect high-frequency tool usage patterns that suggest automation opportunities
+  // --- Tool Usage Analytics ---
   var toolUsage = {};
   var toolMatches = corpus.match(/\[TOOL:\s*(\w+)\]/g) || [];
-  for (var ti = 0; ti < toolMatches.length; ti++) {
-    var toolName = toolMatches[ti].match(/\[TOOL:\s*(\w+)\]/)[1];
+  for (var i = 0; i < toolMatches.length; i++) {
+    var toolName = toolMatches[i].match(/\[TOOL:\s*(\w+)\]/)[1];
     toolUsage[toolName] = (toolUsage[toolName] || 0) + 1;
   }
+  
   Object.keys(toolUsage).forEach(function(tool) {
     if (toolUsage[tool] >= 5) {
       signals.push('high_tool_usage:' + tool);
     }
+    // Detect repeated exec usage (often a sign of manual loops or inefficient automation)
     if (tool === 'exec' && toolUsage[tool] >= 3) {
       signals.push('repeated_tool_usage:exec');
     }
@@ -235,17 +217,8 @@ function extractSignals({ recentSessionTranscript, todayLog, memorySnippet, user
     }
   }
 
-  // --- Force innovation when repair-heavy (ratio or consecutive) ---
-  // Threshold is strategy-aware: "innovate" mode triggers sooner, "harden" mode allows more repairs
-  var strategy = resolveStrategy();
-  var repairRatio = 0;
-  if (history.recentIntents && history.recentIntents.length > 0) {
-    var repairCount = history.recentIntents.filter(function(i) { return i === 'repair'; }).length;
-    repairRatio = repairCount / history.recentIntents.length;
-  }
-  var shouldForceInnovation = strategy.name === 'repair-only' ? false :
-    (history.consecutiveRepairCount >= 3 || repairRatio >= strategy.repairLoopThreshold);
-  if (shouldForceInnovation) {
+  // --- Force innovation after 3+ consecutive repairs ---
+  if (history.consecutiveRepairCount >= 3) {
     // Remove repair-only signals (log_error, errsig) and inject innovation signals
     signals = signals.filter(function (s) {
       return s !== 'log_error' && !s.startsWith('errsig:') && !s.startsWith('recurring_errsig');

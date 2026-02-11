@@ -4,7 +4,7 @@ const { execSync } = require('child_process');
 const { loadGenes, upsertGene, appendEventJsonl, appendCapsule, upsertCapsule, getLastEventId } = require('./assetStore');
 const { computeSignalKey, memoryGraphPath } = require('./memoryGraph');
 const { computeCapsuleSuccessStreak, isBlastRadiusSafe } = require('./a2a');
-const { getRepoRoot, getMemoryDir, getEvolutionDir } = require('./paths');
+const { getRepoRoot, getMemoryDir, getEvolutionDir, getWorkspaceRoot } = require('./paths');
 const { extractSignals } = require('./signals');
 const { selectGene } = require('./selector');
 const { isValidMutation, normalizeMutation, isHighRiskMutationAllowed, isHighRiskPersonality } = require('./mutation');
@@ -85,21 +85,6 @@ function gitListChangedFiles({ repoRoot }) {
   return Array.from(files);
 }
 
-function parseNumstat(text) {
-  const lines = String(text || '').split('\n').map(l => l.trim()).filter(Boolean);
-  let added = 0;
-  let deleted = 0;
-  for (const line of lines) {
-    const parts = line.split('\t');
-    if (parts.length < 3) continue;
-    const a = Number(parts[0]);
-    const d = Number(parts[1]);
-    if (Number.isFinite(a)) added += a;
-    if (Number.isFinite(d)) deleted += d;
-  }
-  return { added, deleted };
-}
-
 function countFileLines(absPath) {
   try {
     if (!fs.existsSync(absPath)) return 0;
@@ -113,30 +98,149 @@ function countFileLines(absPath) {
   }
 }
 
+function normalizeRelPath(relPath) {
+  return String(relPath || '').replace(/\\/g, '/').replace(/^\.\/+/, '').trim();
+}
+
+function readOpenclawConstraintPolicy() {
+  const defaults = {
+    excludePrefixes: ['logs/', 'memory/', 'assets/gep/', 'out/', 'temp/'],
+    excludeExact: ['event.json', 'temp_gep_output.json', 'temp_evolution_output.json', 'evolution_error.log'],
+    excludeRegex: ['capsule', 'events?\\.jsonl$'],
+    includePrefixes: ['src/', 'scripts/', 'config/'],
+    includeExact: ['index.js', 'package.json'],
+    includeExtensions: ['.js', '.cjs', '.mjs', '.ts', '.tsx', '.json', '.yaml', '.yml', '.toml', '.ini', '.sh'],
+  };
+  try {
+    const root = path.resolve(getWorkspaceRoot(), '..');
+    const cfgPath = path.join(root, 'openclaw.json');
+    if (!fs.existsSync(cfgPath)) return defaults;
+    const obj = readJsonIfExists(cfgPath, {});
+    const pol =
+      obj &&
+      obj.evolver &&
+      obj.evolver.constraints &&
+      obj.evolver.constraints.countedFilePolicy &&
+      typeof obj.evolver.constraints.countedFilePolicy === 'object'
+        ? obj.evolver.constraints.countedFilePolicy
+        : {};
+    return {
+      excludePrefixes: Array.isArray(pol.excludePrefixes) ? pol.excludePrefixes.map(String) : defaults.excludePrefixes,
+      excludeExact: Array.isArray(pol.excludeExact) ? pol.excludeExact.map(String) : defaults.excludeExact,
+      excludeRegex: Array.isArray(pol.excludeRegex) ? pol.excludeRegex.map(String) : defaults.excludeRegex,
+      includePrefixes: Array.isArray(pol.includePrefixes) ? pol.includePrefixes.map(String) : defaults.includePrefixes,
+      includeExact: Array.isArray(pol.includeExact) ? pol.includeExact.map(String) : defaults.includeExact,
+      includeExtensions: Array.isArray(pol.includeExtensions) ? pol.includeExtensions.map(String) : defaults.includeExtensions,
+    };
+  } catch (_) {
+    return defaults;
+  }
+}
+
+function matchAnyPrefix(rel, prefixes) {
+  const list = Array.isArray(prefixes) ? prefixes : [];
+  for (const p of list) {
+    const n = normalizeRelPath(p).replace(/\/+$/, '');
+    if (!n) continue;
+    if (rel === n || rel.startsWith(n + '/')) return true;
+  }
+  return false;
+}
+
+function matchAnyExact(rel, exacts) {
+  const set = new Set((Array.isArray(exacts) ? exacts : []).map(x => normalizeRelPath(x)));
+  return set.has(rel);
+}
+
+function matchAnyRegex(rel, regexList) {
+  for (const raw of Array.isArray(regexList) ? regexList : []) {
+    try {
+      if (new RegExp(String(raw), 'i').test(rel)) return true;
+    } catch (_) {}
+  }
+  return false;
+}
+
+function isConstraintCountedPath(relPath, policy) {
+  const rel = normalizeRelPath(relPath);
+  if (!rel) return false;
+  if (matchAnyExact(rel, policy.excludeExact)) return false;
+  if (matchAnyPrefix(rel, policy.excludePrefixes)) return false;
+  if (matchAnyRegex(rel, policy.excludeRegex)) return false;
+  if (matchAnyExact(rel, policy.includeExact)) return true;
+  if (matchAnyPrefix(rel, policy.includePrefixes)) return true;
+  const lower = rel.toLowerCase();
+  for (const ext of Array.isArray(policy.includeExtensions) ? policy.includeExtensions : []) {
+    const e = String(ext || '').toLowerCase();
+    if (!e) continue;
+    if (lower.endsWith(e)) return true;
+  }
+  return false;
+}
+
+function parseNumstatRows(text) {
+  const rows = [];
+  const lines = String(text || '').split('\n').map(l => l.trim()).filter(Boolean);
+  for (const line of lines) {
+    const parts = line.split('\t');
+    if (parts.length < 3) continue;
+    const a = Number(parts[0]);
+    const d = Number(parts[1]);
+    let rel = normalizeRelPath(parts.slice(2).join('\t'));
+    if (rel.includes('=>')) {
+      const right = rel.split('=>').pop();
+      rel = normalizeRelPath(String(right || '').replace(/[{}]/g, '').trim());
+    }
+    rows.push({
+      file: rel,
+      added: Number.isFinite(a) ? a : 0,
+      deleted: Number.isFinite(d) ? d : 0,
+    });
+  }
+  return rows;
+}
+
 function computeBlastRadius({ repoRoot, baselineUntracked }) {
-  let changedFiles = gitListChangedFiles({ repoRoot });
+  const policy = readOpenclawConstraintPolicy();
+  let changedFiles = gitListChangedFiles({ repoRoot }).map(normalizeRelPath).filter(Boolean);
   if (Array.isArray(baselineUntracked) && baselineUntracked.length > 0) {
-    const baselineSet = new Set(baselineUntracked);
+    const baselineSet = new Set(baselineUntracked.map(normalizeRelPath));
     changedFiles = changedFiles.filter(f => !baselineSet.has(f));
   }
-  const filesCount = changedFiles.length;
+  const countedFiles = changedFiles.filter(f => isConstraintCountedPath(f, policy));
+  const ignoredFiles = changedFiles.filter(f => !isConstraintCountedPath(f, policy));
+  const filesCount = countedFiles.length;
+
   const u = tryRunCmd('git diff --numstat', { cwd: repoRoot, timeoutMs: 60000 });
   const c = tryRunCmd('git diff --cached --numstat', { cwd: repoRoot, timeoutMs: 60000 });
-  const unstaged = u.ok ? parseNumstat(u.out) : { added: 0, deleted: 0 };
-  const staged = c.ok ? parseNumstat(c.out) : { added: 0, deleted: 0 };
+  const unstagedRows = u.ok ? parseNumstatRows(u.out) : [];
+  const stagedRows = c.ok ? parseNumstatRows(c.out) : [];
+  let stagedUnstagedChurn = 0;
+  for (const row of [...unstagedRows, ...stagedRows]) {
+    if (!isConstraintCountedPath(row.file, policy)) continue;
+    stagedUnstagedChurn += row.added + row.deleted;
+  }
+
   const untracked = tryRunCmd('git ls-files --others --exclude-standard', { cwd: repoRoot, timeoutMs: 60000 });
   let untrackedLines = 0;
   if (untracked.ok) {
-    const rels = String(untracked.out).split('\n').map(l => l.trim()).filter(Boolean);
-    const baselineSet = new Set(Array.isArray(baselineUntracked) ? baselineUntracked : []);
+    const rels = String(untracked.out).split('\n').map(normalizeRelPath).filter(Boolean);
+    const baselineSet = new Set((Array.isArray(baselineUntracked) ? baselineUntracked : []).map(normalizeRelPath));
     for (const rel of rels) {
       if (baselineSet.has(rel)) continue;
+      if (!isConstraintCountedPath(rel, policy)) continue;
       const abs = path.join(repoRoot, rel);
       untrackedLines += countFileLines(abs);
     }
   }
-  const churn = unstaged.added + unstaged.deleted + staged.added + staged.deleted + untrackedLines;
-  return { files: filesCount, lines: churn, changed_files: changedFiles };
+  const churn = stagedUnstagedChurn + untrackedLines;
+  return {
+    files: filesCount,
+    lines: churn,
+    changed_files: countedFiles,
+    ignored_files: ignoredFiles,
+    all_changed_files: changedFiles,
+  };
 }
 
 function isForbiddenPath(relPath, forbiddenPaths) {
@@ -160,7 +264,7 @@ function checkConstraints({ gene, blast }) {
     if (Number(blast.files) > maxFiles) violations.push(`max_files exceeded: ${blast.files} > ${maxFiles}`);
   }
   const forbidden = Array.isArray(constraints.forbidden_paths) ? constraints.forbidden_paths : [];
-  for (const f of blast.changed_files || []) {
+  for (const f of blast.all_changed_files || blast.changed_files || []) {
     if (isForbiddenPath(f, forbidden)) violations.push(`forbidden_path touched: ${f}`);
   }
   return { ok: violations.length === 0, violations };
@@ -393,6 +497,9 @@ function solidify({ intent, summary, dryRun = false, rollbackOnFailure = true } 
     intent && mutation && typeof mutation.category === 'string' && String(intent) !== String(mutation.category);
   if (intentMismatch) protocolViolations.push(`intent_mismatch_with_mutation:${String(intent)}!=${String(mutation.category)}`);
 
+  const sourceType = lastRun && lastRun.source_type ? String(lastRun.source_type) : 'generated';
+  const reusedAssetId = lastRun && lastRun.reused_asset_id ? String(lastRun.reused_asset_id) : null;
+
   const event = {
     type: 'EvolutionEvent',
     schema_version: SCHEMA_VERSION,
@@ -406,6 +513,8 @@ function solidify({ intent, summary, dryRun = false, rollbackOnFailure = true } 
     blast_radius: { files: blast.files, lines: blast.lines },
     outcome: { status: outcomeStatus, score },
     capsule_id: capsuleId,
+    source_type: sourceType,
+    reused_asset_id: reusedAssetId,
     env_fingerprint: envFp,
     validation_report_id: validationReport.id,
     meta: {
@@ -461,15 +570,8 @@ function solidify({ intent, summary, dryRun = false, rollbackOnFailure = true } 
       outcome: { status: 'success', score },
       success_streak: 1,
       env_fingerprint: envFp,
-      metadata: {
-        author: process.env.A2A_NODE_ID || process.env.AGENT_NAME || 'unknown',
-        tags: signals.slice(0, 5),
-        created_at: ts,
-      },
-      performance_metrics: {
-        reuse_potential: prevCapsule ? 'high' : 'medium',
-        blast_efficiency: blast.files > 0 ? Math.round((blast.lines / blast.files) * 10) / 10 : 0,
-      },
+      source_type: sourceType,
+      reused_asset_id: reusedAssetId,
       a2a: { eligible_to_broadcast: false },
     };
     capsule.asset_id = computeAssetId(capsule);
@@ -510,7 +612,57 @@ function solidify({ intent, summary, dryRun = false, rollbackOnFailure = true } 
   };
   if (!dryRun) writeStateForSolidify(state);
 
-  return { ok: success, event, capsule, gene: geneUsed, constraintCheck, validation, validationReport, blast };
+  // Search-First Evolution: auto-publish eligible capsules to the Hub.
+  let publishResult = null;
+  if (!dryRun && capsule && capsule.a2a && capsule.a2a.eligible_to_broadcast) {
+    const sourceType = lastRun && lastRun.source_type ? String(lastRun.source_type) : 'generated';
+    const autoPublish = String(process.env.EVOLVER_AUTO_PUBLISH || 'true').toLowerCase() !== 'false';
+    const visibility = String(process.env.EVOLVER_DEFAULT_VISIBILITY || 'public').toLowerCase();
+    const minPublishScore = Number(process.env.EVOLVER_MIN_PUBLISH_SCORE) || 0.78;
+
+    // Skip publishing if: disabled, private, reused asset, or below minimum score
+    if (autoPublish && visibility === 'public' && sourceType !== 'reused' && (capsule.outcome.score || 0) >= minPublishScore) {
+      try {
+        const { buildPublish, httpTransportSend } = require('./a2aProtocol');
+        const { sanitizePayload } = require('./sanitize');
+        const hubUrl = (process.env.A2A_HUB_URL || '').replace(/\/+$/, '');
+
+        if (hubUrl) {
+          const sanitized = sanitizePayload(capsule);
+          const msg = buildPublish({ asset: sanitized });
+          const result = httpTransportSend(msg, { hubUrl });
+          // httpTransportSend returns a Promise
+          if (result && typeof result.then === 'function') {
+            result
+              .then(function (res) {
+                if (res && res.ok) {
+                  console.log(`[AutoPublish] Published ${capsule.asset_id || capsule.id} to Hub.`);
+                } else {
+                  console.log(`[AutoPublish] Hub rejected: ${JSON.stringify(res)}`);
+                }
+              })
+              .catch(function (err) {
+                console.log(`[AutoPublish] Failed (non-fatal): ${err.message}`);
+              });
+          }
+          publishResult = { attempted: true, asset_id: capsule.asset_id || capsule.id };
+        } else {
+          publishResult = { attempted: false, reason: 'no_hub_url' };
+        }
+      } catch (e) {
+        console.log(`[AutoPublish] Error (non-fatal): ${e.message}`);
+        publishResult = { attempted: false, reason: e.message };
+      }
+    } else {
+      const reason = !autoPublish ? 'auto_publish_disabled'
+        : visibility !== 'public' ? 'visibility_private'
+        : sourceType === 'reused' ? 'skip_reused_asset'
+        : 'below_min_score';
+      publishResult = { attempted: false, reason };
+    }
+  }
+
+  return { ok: success, event, capsule, gene: geneUsed, constraintCheck, validation, validationReport, blast, publishResult };
 }
 
 module.exports = {

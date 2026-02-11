@@ -29,11 +29,11 @@ function main() {
   var validated = args.flags.has('validated') || String(args.kv.get('validated') || '') === 'true';
   var limit = Number.isFinite(Number(args.kv.get('limit'))) ? Number(args.kv.get('limit')) : 500;
 
-  if (!id || !typeRaw) throw new Error('Usage: node scripts/a2a_promote.js --type capsule|gene --id <id> --validated');
+  if (!id || !typeRaw) throw new Error('Usage: node scripts/a2a_promote.js --type capsule|gene|event --id <id> --validated');
   if (!validated) throw new Error('Refusing to promote without --validated (local verification must be done first).');
 
-  var type = typeRaw === 'capsule' ? 'Capsule' : typeRaw === 'gene' ? 'Gene' : '';
-  if (!type) throw new Error('Invalid --type. Use capsule or gene.');
+  var type = typeRaw === 'capsule' ? 'Capsule' : typeRaw === 'gene' ? 'Gene' : typeRaw === 'event' ? 'EvolutionEvent' : '';
+  if (!type) throw new Error('Invalid --type. Use capsule, gene, or event.');
 
   var external = assetStore.readRecentExternalCandidates(limit);
   var candidate = null;
@@ -61,6 +61,18 @@ function main() {
   promoted.asset_id = contentHash.computeAssetId(promoted);
 
   var emitDecisions = process.env.A2A_EMIT_DECISIONS === 'true';
+
+  if (type === 'EvolutionEvent') {
+    assetStore.appendEventJsonl(promoted);
+    if (emitDecisions) {
+      try {
+        var dmEv = a2aProto.buildDecision({ assetId: promoted.asset_id, localId: id, decision: 'accept', reason: 'event promoted for provenance tracking' });
+        a2aProto.getTransport().send(dmEv);
+      } catch (e) {}
+    }
+    process.stdout.write('promoted_event=' + id + '\n');
+    return;
+  }
 
   if (type === 'Capsule') {
     assetStore.appendCapsule(promoted);

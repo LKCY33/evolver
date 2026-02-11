@@ -1,7 +1,7 @@
 var fs = require('fs');
 var assetStore = require('../src/gep/assetStore');
 var a2a = require('../src/gep/a2a');
-var memGraph = require('../src/gep/memoryGraph');
+var memGraph = require('../src/gep/memoryGraphAdapter');
 var contentHash = require('../src/gep/contentHash');
 var a2aProto = require('../src/gep/a2aProtocol');
 
