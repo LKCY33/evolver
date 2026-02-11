@@ -23,6 +23,7 @@ function uniqStrings(list) {
 
 function hasErrorishSignal(signals) {
   const list = Array.isArray(signals) ? signals.map(s => String(s || '')) : [];
+  if (list.includes('issue_already_resolved') || list.includes('openclaw_self_healed')) return false;
   if (list.includes('log_error')) return true;
   if (list.some(s => s.startsWith('errsig:') || s.startsWith('errsig_norm:'))) return true;
   return false;
@@ -36,6 +37,8 @@ var OPPORTUNITY_SIGNALS = [
   'capability_gap',
   'stable_success_plateau',
   'external_opportunity',
+  'issue_already_resolved',
+  'openclaw_self_healed',
 ];
 
 function hasOpportunitySignal(signals) {

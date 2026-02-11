@@ -75,12 +75,16 @@ function analyzeRecentHistory(recentEvents) {
 
 function extractSignals({ recentSessionTranscript, todayLog, memorySnippet, userSnippet, recentEvents }) {
   var signals = [];
-  var corpus = [
+  var runtimeCorpus = [
     String(recentSessionTranscript || ''),
     String(todayLog || ''),
+  ].join('\n');
+  var contextCorpus = [
     String(memorySnippet || ''),
     String(userSnippet || ''),
   ].join('\n');
+  var corpus = [runtimeCorpus, contextCorpus].join('\n');
+  var runtimeLower = runtimeCorpus.toLowerCase();
   var lower = corpus.toLowerCase();
 
   // Analyze recent evolution history for de-duplication
@@ -88,12 +92,13 @@ function extractSignals({ recentSessionTranscript, todayLog, memorySnippet, user
 
   // --- Defensive signals (errors, missing resources) ---
 
-  var errorHit = /\[error|error:|exception|fail|failed|iserror":true/.test(lower);
+  // Detect active errors only from runtime logs, not from long-term memory text.
+  var errorHit = /\[error|error:|exception|fail|failed|iserror":true/.test(runtimeLower);
   if (errorHit) signals.push('log_error');
 
   // Error signature (more reproducible than a coarse "log_error" tag).
   try {
-    var lines = corpus
+    var lines = runtimeCorpus
       .split('\n')
       .map(function (l) { return String(l || '').trim(); })
       .filter(Boolean);
@@ -122,7 +127,7 @@ function extractSignals({ recentSessionTranscript, todayLog, memorySnippet, user
   // Count repeated identical errors -- these indicate systemic issues that need automated fixes
   try {
     var errorCounts = {};
-    var errPatterns = corpus.match(/(?:LLM error|"error"|"status":\s*"error")[^}]{0,200}/gi) || [];
+    var errPatterns = runtimeCorpus.match(/(?:LLM error|"error"|"status":\s*"error")[^}]{0,200}/gi) || [];
     for (var ep = 0; ep < errPatterns.length; ep++) {
       // Normalize to a short key
       var key = errPatterns[ep].replace(/\s+/g, ' ').slice(0, 100);
@@ -138,8 +143,26 @@ function extractSignals({ recentSessionTranscript, todayLog, memorySnippet, user
   } catch (e) {}
 
   // --- Unsupported input type (e.g. GIF, video formats the LLM can't handle) ---
-  if (/unsupported mime|unsupported.*type|invalid.*mime/i.test(lower)) {
+  if (/unsupported mime|unsupported.*type|invalid.*mime/i.test(runtimeLower)) {
     signals.push('unsupported_input_type');
+  }
+
+  // OpenClaw platform self-heal marker.
+  // These indicate infra/channel recovered by OpenClaw itself, not by evolver changes.
+  // IMPORTANT: must match explicit recovery *phrases*, not generic operational words like
+  // "gateway" or "ws client ready" which appear in every normal cycle.
+  var openclawSelfHealed =
+    /gateway restart|gateway auto-?repair|openclaw.*(?:auto-?repair|self-?heal|recovered|recovery)|ensure-feishu-override.*synced|feishu.*reconnect|ws.*reconnect/i.test(runtimeCorpus);
+
+  // Generic resolved/self-healed marker: issue no longer requires evolver repair attribution.
+  var resolvedBySystem =
+    openclawSelfHealed ||
+    /already fixed|already resolved|issue resolved|auto-?recovered|skip_reused_asset/i.test(runtimeCorpus);
+  if (resolvedBySystem) {
+    signals.push('issue_already_resolved');
+  }
+  if (openclawSelfHealed) {
+    signals.push('openclaw_self_healed');
   }
 
   // --- Opportunity signals (innovation / feature requests) ---
@@ -229,6 +252,17 @@ function extractSignals({ recentSessionTranscript, todayLog, memorySnippet, user
     }
     // Append a directive signal that the prompt can pick up
     signals.push('force_innovation_after_repair_loop');
+  }
+
+  // Hard guard: resolved issue must not continue to drive repair loops.
+  if (signals.includes('issue_already_resolved') || signals.includes('openclaw_self_healed')) {
+    signals = signals.filter(function (s) {
+      return s !== 'log_error' &&
+        s !== 'recurring_error' &&
+        !s.startsWith('errsig:') &&
+        !s.startsWith('recurring_errsig');
+    });
+    if (!signals.includes('external_opportunity')) signals.push('external_opportunity');
   }
 
   // If no signals at all, add a default innovation signal

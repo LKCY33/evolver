@@ -193,6 +193,10 @@ II. Execution Flow & Logic
 3. Selection:
    - Selected Gene: "${selectedGeneId}"
    - If selected gene exists in "Gene Preview", ADHERE to its strategy.
+   - If signals contain "issue_already_resolved", DO NOT target the same repair objective again.
+     You must switch to a different target (optimize/innovate) and explain the new objective.
+   - If signals contain "openclaw_self_healed", treat it as platform self-recovery.
+     You MUST NOT claim evolver fixed that issue.
 
 4. Execution:
    - Apply changes via tool calls (edit, write, exec).
@@ -212,6 +216,8 @@ II. Execution Flow & Logic
 7. Report:
    - Use \`feishu-evolver-wrapper/report.js\` to announce result.
    - Describe WHAT changed and WHY.
+   - Never claim "fixed" when the issue was already resolved before this cycle.
+   - Never attribute OpenClaw platform self-heal to evolver.
 
 ━━━━━━━━━━━━━━━━━━━━━━
 III. Selector (Mandatory Guidance)
